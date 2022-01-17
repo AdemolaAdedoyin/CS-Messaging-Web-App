@@ -1,11 +1,32 @@
 import { createRouter, createWebHistory } from "vue-router";
-import Home from "../views/Home.vue";
+// import Home from "../views/Home.vue";
+import login from "../views/Login.vue";
+import chat from "../views/Chat.vue";
+import csChat from "../views/Cs-Chat.vue";
 
 const routes = [
   {
     path: "/",
-    name: "Home",
-    component: Home,
+    name: "login",
+    component: login,
+  },
+  {
+    path: "/chat",
+    name: "chat",
+    component: chat,
+    props: true,
+    beforeEnter: (to, from, next) => {
+      if (to.params.name) {
+        next();
+      } else {
+        next({ name: "login" });
+      }
+    },
+  },
+  {
+    path: "/rep/chat",
+    name: "rep-chat",
+    component: csChat,
   },
   {
     path: "/about",

@@ -27,6 +27,14 @@ const routes = [
     path: "/rep/chat",
     name: "rep-chat",
     component: csChat,
+    props: true,
+    beforeEnter: (to, from, next) => {
+      if (to.params.repName) {
+        next();
+      } else {
+        next({ name: "login" });
+      }
+    },
   },
   {
     path: "/about",

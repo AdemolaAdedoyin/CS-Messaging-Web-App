@@ -56,7 +56,7 @@ export default {
       if (this.name && this.role) {
         button.disabled = true;
 
-        // this.name = this.name.toLowerCase();
+        this.name = this.name.toLowerCase();
 
         const user = await fb.userProcess(
           this.role + "s",

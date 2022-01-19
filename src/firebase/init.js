@@ -1,5 +1,6 @@
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
+import config from "../../config/index";
 import {
   getFirestore,
   doc,
@@ -22,15 +23,7 @@ import {
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 let functions = {};
 
-const firebaseConfig = {
-  apiKey: "AIzaSyDG6Kr2MmV2DjJ1bBvQlHRTjj16uiMv26c",
-  authDomain: "adedoyin-ademola.firebaseapp.com",
-  projectId: "adedoyin-ademola",
-  storageBucket: "adedoyin-ademola.appspot.com",
-  messagingSenderId: "279685527478",
-  appId: "1:279685527478:web:b18cf2b055e3cb43a9b317",
-  measurementId: "G-SJB7HFXMGV",
-};
+const firebaseConfig = config;
 
 // Initialize Firebase
 initializeApp(firebaseConfig);
@@ -83,6 +76,7 @@ async function createRoom(customerName) {
     await setDoc(documentRef, {
       customerName,
       assignedTo: rep?.name || "",
+      //   lastUpdated: new Date(),
     });
 
     return rep;
@@ -176,6 +170,13 @@ async function writeMessage(customerName, from, message) {
       `Rooms/${customerName}'s Room/messages/message${docData.timestamp}`
     );
     await setDoc(documentRef, docData, { merge: true }); // add to collection and specific document id
+    await setDoc(
+      doc(firestore, `Rooms/${customerName}'s Room`),
+      {
+        lastUpdated: new Date(),
+      },
+      { merge: true }
+    );
   } catch (error) {
     console.log("There was an error", error);
   }

@@ -7,7 +7,7 @@
         <p v-if="messages.length === 0" class="text-secondary nomessages">
           [No messages yet!]
         </p>
-        <div class="messages" v-chat-scroll="{ always: false, smooth: true }">
+        <div id="messages" class="messages">
           <div v-for="message in messages" :key="message.id">
             <span class="text-info"> [{{ message.name }}]: </span>
             <span> {{ message.message }} </span>

@@ -6,4 +6,4 @@ import router from "./router";
 import "bootstrap";
 import "bootstrap/dist/css/bootstrap.min.css";
 
-createApp(App).use(VueChatScroll).use(router).mount("#app");
+createApp(App).use(router).use(VueChatScroll).mount("#app");

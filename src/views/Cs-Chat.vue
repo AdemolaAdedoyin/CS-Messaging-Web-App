@@ -10,6 +10,8 @@
                 placeholder="Search..."
                 name=""
                 class="form-control search"
+                v-model="search"
+                v-on:change="filter"
               />
               <div class="input-group-prepend">
                 <span class="input-group-text search_btn"
@@ -33,7 +35,7 @@
           <div class="card-body contacts_body" v-else-if="chatsAvailable">
             <ul
               class="contacts"
-              v-for="room in Object.keys(chatRoom)"
+              v-for="room in Object.keys(filteredChatRoom)"
               v-bind:key="room"
               :id="room"
               style="cursor: pointer"
@@ -50,7 +52,13 @@
                   </div>
                   <div class="user_info">
                     <span>{{ room.toUpperCase() }}</span>
-                    <p>New message</p>
+                    <p>
+                      {{
+                        filteredChatRoom[room].messages[
+                          filteredChatRoom[room].messages.length - 1
+                        ].message
+                      }}
+                    </p>
                   </div>
                 </div>
               </li>
@@ -85,7 +93,7 @@
               </div>
               <div class="user_info">
                 <span>Chat with {{ active }}</span>
-                <p>{{ chatRoom[active].messages.length }} Message(s)</p>
+                <p>{{ filteredChatRoom[active].messages.length }} Message(s)</p>
               </div>
               <div class="video_cam">
                 <span><i class="fas fa-video"></i></span>
@@ -110,7 +118,7 @@
             :id="active"
           >
             <div
-              v-for="message in chatRoom[active].messages"
+              v-for="message in filteredChatRoom[active].messages"
               v-bind:key="message.id"
             >
               <div
@@ -173,25 +181,80 @@ import $ from "jquery";
 import fb from "@/firebase/init";
 import moment from "moment";
 
+let messageUnsubscribe;
+let roomUnsubscribe;
+
 export default {
   name: "cs-chat",
   props: ["repName"],
   data() {
     return {
       chatRoom: {},
+      roomObj: {},
+      filteredChatRoom: {},
       newMessages: {},
       chatsAvailable: false,
       message: "",
       active: "",
       previousActive: "",
       loading: true,
+      search: "",
     };
   },
   watch: {},
   created() {
     this.listenToRoomChange();
   },
+  //   beforeUnmount() {
+  //     console.log("destroyin room listener");
+  //     roomUnsubscribe();
+  //   },
   methods: {
+    priority() {
+      const priorityObj = {};
+      for (const room in this.chatRoom) {
+        const current = this.chatRoom[room];
+        // console.log(current);
+        for (
+          let message = current.messages.length - 2;
+          message < current.messages.length;
+          message++
+        ) {
+          if (current.messages[message]?.message.includes("loan"))
+            priorityObj[room] = this.chatRoom[room];
+        }
+      }
+      console.log(priorityObj);
+      return priorityObj;
+    },
+    sort() {
+      const sortedObj = this.priority();
+      //   const sortedObj = {};
+      const sortable = Object.fromEntries(
+        Object.entries(this.roomObj).sort(([, a], [, b]) => b - a)
+      );
+
+      for (const item in sortable) {
+        if (!Object.keys(sortedObj).includes(item))
+          sortedObj[item] = this.chatRoom[item];
+        // sortedObj[item] = this.chatRoom[item];
+      }
+
+      return sortedObj;
+    },
+    filter() {
+      if (this.search === "") this.filteredChatRoom = this.sort();
+      else {
+        this.filteredChatRoom = {};
+        Object.keys(this.chatRoom).filter((room) =>
+          room.includes(this.search)
+            ? (this.filteredChatRoom[room] = this.chatRoom[room])
+            : null
+        );
+        if (!Object.keys(this.filteredChatRoom).includes(this.active))
+          this.active = "";
+      }
+    },
     sendMessage() {
       if (this.message) {
         fb.writeMessage(this.active, this.repName, this.message);
@@ -206,17 +269,22 @@ export default {
         const rooms = [];
         const queryFilter = fb.firebase.query(
           fb.firebase.collection(fb.firebase.firestore, "Rooms"),
-          fb.firebase.where("assignedTo", "==", this.repName)
+          fb.firebase.where("assignedTo", "==", this.repName),
+          fb.firebase.orderBy("lastUpdated", "desc")
         );
 
-        fb.firebase.onSnapshot(queryFilter, (docSnapShot) => {
+        roomUnsubscribe = fb.firebase.onSnapshot(queryFilter, (docSnapShot) => {
           docSnapShot.docChanges().forEach((change) => {
             if (change.type === "added") {
-              console.log("New change to rooms: ", change.doc.data());
-              rooms.push(change.doc.data().customerName);
+              console.log(
+                "changes to room: ",
+                change.doc.data().customerName,
+                change.doc.data().lastUpdated
+              );
+              this.listenToMessageChange([change.doc.data().customerName]);
             }
           });
-          this.listenToMessageChange(rooms);
+          this.loading = false;
         });
       } catch (error) {
         console.log(error);
@@ -224,6 +292,7 @@ export default {
     },
     async listenToMessageChange(rooms) {
       try {
+        if (rooms.length === 0) this.loading = false;
         rooms.forEach((room) => {
           this.chatRoom[room] = { messages: [] };
           const queryFilter = fb.firebase.query(
@@ -246,10 +315,13 @@ export default {
                     this.newMessages[room].data().timestamp
                   ).format("LT"),
                 });
+                console.log("addition: ", room, change.doc.data().message);
+                this.roomObj[room] = this.newMessages[room].data().timestamp;
               }
-              this.loading = false;
-              this.chatsAvailable = true;
             });
+            this.filter();
+            this.loading = false;
+            this.chatsAvailable = true;
           });
         });
       } catch (error) {

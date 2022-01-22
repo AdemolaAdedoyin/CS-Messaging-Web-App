@@ -5,7 +5,6 @@ import {
   getFirestore,
   doc,
   setDoc,
-  addDoc,
   collection,
   getDocs,
   where,

@@ -1,5 +1,47 @@
 <template>
   <div class="container-fluid h-100">
+    <template v-if="showModal" type="text/x-template" id="modal-template">
+      <transition name="modal">
+        <div class="modal-mask">
+          <div class="modal-wrapper">
+            <div class="modal-container">
+              <div class="modal-header"></div>
+
+              <div class="modal-body">
+                <div class="modal-body-content">
+                  <div class="modal-body-item">
+                    <p class="modal-body-item-lead">Name:</p>
+                    <p>
+                      <b> {{ active }} </b>
+                    </p>
+                  </div>
+                  <div class="modal-body-item">
+                    <p class="modal-body-item-lead">Email:</p>
+                    <p>
+                      <b>{{ filteredChatRoom[active].email }}</b>
+                    </p>
+                  </div>
+                  <div class="modal-body-item">
+                    <p class="modal-body-item-lead">Number:</p>
+                    <p>
+                      <b> {{ filteredChatRoom[active].phoneNumber }} </b>
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="modal-footer">
+                <slot name="footer">
+                  <button class="btn btn-primary" @click="toggleShowModal">
+                    Cancel
+                  </button>
+                </slot>
+              </div>
+            </div>
+          </div>
+        </div>
+      </transition>
+    </template>
     <div class="row justify-content-center h-100">
       <div class="col-md-4 col-xl-3 chat">
         <div class="card mb-sm-3 mb-md-0 contacts_card">
@@ -105,7 +147,9 @@
             ></span>
             <div class="action_menu">
               <ul>
-                <li><i class="fas fa-user-circle"></i> View profile</li>
+                <li @click="toggleShowModal">
+                  <i class="fas fa-user-circle"></i> View profile
+                </li>
                 <li><i class="fas fa-users"></i> Add to close friends</li>
                 <li><i class="fas fa-plus"></i> Add to group</li>
                 <li><i class="fas fa-ban"></i> Block</li>
@@ -113,9 +157,9 @@
             </div>
           </div>
           <div
+            id="messages"
             class="card-body msg_card_body"
             v-if="active && chatsAvailable"
-            :id="active"
           >
             <div
               v-for="message in filteredChatRoom[active].messages"
@@ -181,21 +225,19 @@ import $ from "jquery";
 import fb from "@/firebase/init";
 import moment from "moment";
 
-let messageUnsubscribe;
-let roomUnsubscribe;
-
 export default {
   name: "cs-chat",
   props: ["repName"],
   data() {
     return {
+      showModal: false,
       chatRoom: {},
       roomObj: {},
       filteredChatRoom: {},
       newMessages: {},
       chatsAvailable: false,
       message: "",
-      active: "",
+      active: "", // active room
       previousActive: "",
       loading: true,
       search: "",
@@ -203,18 +245,17 @@ export default {
   },
   watch: {},
   created() {
-    this.listenToRoomChange();
+    this.listenToRoomChange(); // to listen for when new rooms are created
   },
-  //   beforeUnmount() {
-  //     console.log("destroyin room listener");
-  //     roomUnsubscribe();
-  //   },
   methods: {
+    toggleShowModal() {
+      this.showModal = !this.showModal;
+    },
     priority() {
+      // this gets the priority messages. Currently only checks for loans, by checking the last two messages in each chat
       const priorityObj = {};
       for (const room in this.chatRoom) {
         const current = this.chatRoom[room];
-        // console.log(current);
         for (
           let message = current.messages.length - 2;
           message < current.messages.length;
@@ -224,12 +265,11 @@ export default {
             priorityObj[room] = this.chatRoom[room];
         }
       }
-      console.log(priorityObj);
       return priorityObj;
     },
     sort() {
+      // this sorts the messages by most recent
       const sortedObj = this.priority();
-      //   const sortedObj = {};
       const sortable = Object.fromEntries(
         Object.entries(this.roomObj).sort(([, a], [, b]) => b - a)
       );
@@ -237,12 +277,12 @@ export default {
       for (const item in sortable) {
         if (!Object.keys(sortedObj).includes(item))
           sortedObj[item] = this.chatRoom[item];
-        // sortedObj[item] = this.chatRoom[item];
       }
 
       return sortedObj;
     },
     filter() {
+      // this method is used to filter the results by name
       if (this.search === "") this.filteredChatRoom = this.sort();
       else {
         this.filteredChatRoom = {};
@@ -259,6 +299,7 @@ export default {
       if (this.message) {
         fb.writeMessage(this.active, this.repName, this.message);
         this.message = null;
+        this.autoScroll();
       }
     },
     actionButton() {
@@ -266,14 +307,13 @@ export default {
     },
     listenToRoomChange() {
       try {
-        const rooms = [];
         const queryFilter = fb.firebase.query(
           fb.firebase.collection(fb.firebase.firestore, "Rooms"),
           fb.firebase.where("assignedTo", "==", this.repName),
           fb.firebase.orderBy("lastUpdated", "desc")
         );
 
-        roomUnsubscribe = fb.firebase.onSnapshot(queryFilter, (docSnapShot) => {
+        fb.firebase.onSnapshot(queryFilter, (docSnapShot) => {
           docSnapShot.docChanges().forEach((change) => {
             if (change.type === "added") {
               console.log(
@@ -281,6 +321,11 @@ export default {
                 change.doc.data().customerName,
                 change.doc.data().lastUpdated
               );
+              this.chatRoom[change.doc.data().customerName] = {
+                phoneNumber: change.doc.data().phoneNumber,
+                email: change.doc.data().email,
+                messages: [],
+              }; // assign users details to Object
               this.listenToMessageChange([change.doc.data().customerName]);
             }
           });
@@ -294,7 +339,6 @@ export default {
       try {
         if (rooms.length === 0) this.loading = false;
         rooms.forEach((room) => {
-          this.chatRoom[room] = { messages: [] };
           const queryFilter = fb.firebase.query(
             fb.firebase.collection(
               fb.firebase.firestore,
@@ -320,6 +364,7 @@ export default {
               }
             });
             this.filter();
+            this.autoScroll();
             this.loading = false;
             this.chatsAvailable = true;
           });
@@ -329,6 +374,7 @@ export default {
       }
     },
     makeActive(room) {
+      // this is to set an active room
       this.previousActive = this.active;
       this.active = room;
       let element = document.getElementById(this.active);
@@ -336,6 +382,14 @@ export default {
       this.message = "";
       if (previousElement) previousElement.classList.remove("active"); // remove previous
       if (element) element.classList.add("active"); // make active
+      this.autoScroll();
+    },
+    autoScroll() {
+      setTimeout(() => {
+        var element = document.getElementById("messages");
+        if (element)
+          element.scrollTop = element.scrollHeight - element.clientHeight;
+      }, 100);
     },
   },
 };
@@ -427,7 +481,7 @@ html {
 }
 .contacts li {
   width: 100% !important;
-  padding: 5px 10px;
+  padding: 1px 10px;
   margin-bottom: 15px !important;
 }
 .active {
@@ -469,6 +523,10 @@ html {
   margin-top: auto;
   margin-bottom: auto;
   margin-left: 15px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: flex-start;
 }
 .user_info span {
   font-size: 20px;
@@ -563,5 +621,82 @@ html {
   .contacts_card {
     margin-bottom: 15px !important;
   }
+}
+.modal-mask {
+  position: fixed;
+  z-index: 9998;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: table;
+  transition: opacity 0.3s ease;
+}
+
+.modal-wrapper {
+  display: table-cell;
+  vertical-align: middle;
+}
+
+.modal-container {
+  width: 300px;
+  margin: 0px auto;
+  padding: 20px 30px;
+  background-color: #fff;
+  border-radius: 2px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.33);
+  transition: all 0.3s ease;
+  font-family: Helvetica, Arial, sans-serif;
+}
+
+.modal-header h3 {
+  margin-top: 0;
+  color: #42b983;
+}
+
+.modal-body {
+  margin: 20px 0;
+}
+
+.modal-default-button {
+  float: right;
+}
+
+/*
+ * The following styles are auto-applied to elements with
+ * transition="modal" when their visibility is toggled
+ * by Vue.js.
+ *
+ * You can easily play with the modal transition by editing
+ * these styles.
+ */
+
+.modal-enter {
+  opacity: 0;
+}
+
+.modal-leave-active {
+  opacity: 0;
+}
+
+.modal-enter .modal-container,
+.modal-leave-active .modal-container {
+  -webkit-transform: scale(1.1);
+  transform: scale(1.1);
+}
+
+.modal-header-text {
+  font-weight: 300;
+  font-size: 20px;
+}
+
+.modal-body-item {
+  width: 100%;
+  display: flex;
+}
+
+.modal-body-item-lead {
+  margin-right: 10px;
 }
 </style>

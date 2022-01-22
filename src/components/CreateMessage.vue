@@ -12,7 +12,12 @@
         />
         <p class="text-danger" v-if="errorText">{{ errorText }}</p>
       </div>
-      <button class="btn btn-primary margin" type="submit" name="action">
+      <button
+        class="btn btn-primary margin"
+        id="submit"
+        type="submit"
+        name="action"
+      >
         Submit
       </button>
     </form>
@@ -21,6 +26,7 @@
 
 <script>
 import fb from "@/firebase/init";
+
 export default {
   name: "CreateMessage",
   props: ["name"],
@@ -28,12 +34,19 @@ export default {
     return { newMessage: null, errorText: null };
   },
   methods: {
+    // method used to send message
+    // Gets the button, disables it, sends message and re-enables it
     createMessage() {
-      if (this.newMessage) {
+      const button = document.getElementById("submit");
+      try {
+        button.disabled = true;
+        if (!this.newMessage) throw Object({ code: "error" });
         fb.writeMessage(this.name, this.name, this.newMessage);
         this.newMessage = null;
+        button.disabled = false;
         this.errorText = null;
-      } else {
+      } catch (error) {
+        button.disabled = false;
         this.errorText = "A message must be entered";
       }
     },

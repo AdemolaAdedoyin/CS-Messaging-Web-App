@@ -29,29 +29,29 @@ const firebaseConfig = config;
 initializeApp(firebaseConfig);
 const firestore = getFirestore();
 
-async function createUser(collectionName, userName, role) {
+async function createUser(collectionName, obj = {}) {
   try {
-    const documentRef = doc(firestore, `${collectionName}/${userName}`);
+    const documentRef = doc(firestore, `${collectionName}/${obj.name}`);
 
-    const obj = {
-      name: userName,
-      role,
+    const userObj = {
+      name: obj.name,
+      role: obj.role,
       timestamp: new Date(),
     };
-    await setDoc(documentRef, obj);
+    await setDoc(documentRef, userObj);
 
-    return obj;
+    return userObj;
   } catch (error) {
     console.log(error);
   }
 }
 
-async function logIn(collectionName, name, role) {
+async function logIn(collectionName, obj = {}) {
   try {
     const queryFilter = query(
       collection(firestore, collectionName),
-      where("name", "==", name),
-      where("role", "==", role)
+      where("name", "==", obj.name),
+      where("role", "==", obj.role)
     );
 
     const querySnapShot = await getDocs(queryFilter);
@@ -66,17 +66,18 @@ async function logIn(collectionName, name, role) {
   let result;
 }
 
-async function createRoom(customerName) {
+async function createRoom(obj) {
   try {
-    const documentRef = doc(firestore, `Rooms/${customerName}'s Room`);
+    const documentRef = doc(firestore, `Rooms/${obj.name}'s Room`);
 
     let rep = await getRep("Customer Representatives");
     if (!rep) rep = {};
 
     await setDoc(documentRef, {
-      customerName,
+      customerName: obj.name,
       assignedTo: rep?.name || "",
-      //   lastUpdated: new Date(),
+      email: obj.email || "xxxx@gmail.com",
+      phoneNumber: obj.phoneNumber || "xxxxxxxxxxx",
     });
 
     return rep;
@@ -131,20 +132,22 @@ async function getSingleRoom(name) {
   }
 }
 
-async function userProcess(collectionName, userName, role) {
+// logs in or creates the user
+// creates a room if non is found, only for customers
+async function userProcess(collectionName, obj = {}) {
   try {
-    let user = await logIn(collectionName, userName, role);
+    let user = await logIn(collectionName, obj);
     if (!user) {
-      await createUser(collectionName, userName, role);
-      user = { name: userName, role };
+      await createUser(collectionName, obj);
+      user = { ...obj };
     }
 
     let room;
-    if (role === "Customer Representative") room = true;
+    if (obj.role === "Customer Representative") room = true;
     else {
       room = await getSingleRoom(user.name);
       if (!room) {
-        const createdRoom = await createRoom(user.name);
+        const createdRoom = await createRoom(user);
         room = { assignedTo: createdRoom.name, customerName: user.name };
       }
     }

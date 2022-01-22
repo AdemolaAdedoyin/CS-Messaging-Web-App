@@ -23,6 +23,7 @@
 </template>
 
 <script>
+// create message component
 import CreateMessage from "@/components/CreateMessage";
 import fb from "@/firebase/init";
 import moment from "moment";
@@ -45,6 +46,7 @@ export default {
   },
   methods: {
     subscribeToMessages() {
+      // creates listeners for new messages sent to the specific room
       try {
         const queryFilter = fb.firebase.query(
           fb.firebase.collection(
@@ -65,12 +67,19 @@ export default {
                 timestamp: moment(newMessage.data().timestamp).format("LTS"),
               });
               console.log("New change: ", change.doc.data());
+              this.autoScroll();
             }
           });
         });
       } catch (error) {
         console.log(error);
       }
+    },
+    autoScroll() {
+      setTimeout(() => {
+        var element = document.getElementById("messages");
+        element.scrollTop = element.scrollHeight - element.clientHeight;
+      }, 500);
     },
     cancelListeners() {
       unscribe();

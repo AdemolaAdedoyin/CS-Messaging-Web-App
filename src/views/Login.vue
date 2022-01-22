@@ -2,7 +2,9 @@
   <div class="container">
     <div class="card login">
       <div class="card-body">
-        <h2 class="card-title text-center">Login</h2>
+        <h2 class="card-title text-center">
+          {{ step === "logIn" ? "Log In" : "Create Account" }}
+        </h2>
         <form @submit.prevent="login" class="text-center">
           <div class="form-group margin">
             <input
@@ -10,12 +12,43 @@
               class="form-control"
               placeholder="Please enter your name"
               name="name"
+              required
               v-model="name"
               autocomplete="off"
             />
           </div>
+          <div v-if="step === 'singUp'">
+            <div class="form-group margin">
+              <input
+                type="number"
+                class="form-control"
+                placeholder="Please enter your phone number"
+                name="phoneNumber"
+                required
+                v-model="phoneNumber"
+                autocomplete="off"
+              />
+            </div>
+            <div class="form-group margin">
+              <input
+                type="email"
+                class="form-control"
+                placeholder="Please enter your email address"
+                name="email"
+                required
+                v-model="email"
+                autocomplete="off"
+              />
+            </div>
+          </div>
           <div class="form-group margin">
-            <select name="role" id="role" class="form-control" v-model="role">
+            <select
+              required
+              name="role"
+              id="role"
+              class="form-control"
+              v-model="role"
+            >
               <option value="null" disabled>Please select your role</option>
               <option v-for="option in roleList" v-bind:key="option.text">
                 {{ option.text }}
@@ -24,8 +57,15 @@
           </div>
           <p v-if="errorText" class="text-danger margin">{{ errorText }}</p>
           <button id="submit" type="submit" class="btn btn-primary margin">
-            Log In
+            {{ step === "logIn" ? "Log In" : "Create Account" }}
           </button>
+          <p
+            @click="changeStep"
+            style="color: blue; cursor: pointer"
+            class="link"
+          >
+            {{ step === "logIn" ? "Create Account ?" : "LogIn ?" }}
+          </p>
         </form>
       </div>
     </div>
@@ -40,8 +80,11 @@ export default {
   data() {
     return {
       name: "",
+      email: "",
+      phoneNumber: "",
       errorText: null,
       role: null,
+      step: "logIn",
       roleList: [
         { value: "customer", text: "Customer" },
         { value: "customerRepresentative", text: "Customer Representative" },
@@ -49,6 +92,10 @@ export default {
     };
   },
   methods: {
+    changeStep() {
+      this.step = this.step === "logIn" ? "singUp" : "logIn";
+    },
+    // log in for customers or customer Rep
     async login() {
       const button = document.getElementById("submit");
       this.errorText = null;
@@ -58,11 +105,12 @@ export default {
 
         this.name = this.name.toLowerCase();
 
-        const user = await fb.userProcess(
-          this.role + "s",
-          this.name,
-          this.role
-        );
+        const user = await fb.userProcess(this.role + "s", {
+          name: this.name,
+          role: this.role,
+          email: this.email,
+          phoneNumber: this.phoneNumber,
+        });
 
         if (user && this.role === "Customer") {
           this.$router.push({
@@ -97,5 +145,10 @@ export default {
   margin-top: 3%;
   margin-left: 3%;
   margin-right: 3%;
+}
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 </style>

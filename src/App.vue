@@ -27,11 +27,20 @@ const priorityLabel = (priority: Priority) => priority === 'high' ? 'High priori
 const openAgent = () => {
   mode.value = 'agent'
   agentSection.value = 'inbox'
+  if (inbox.selectedId.value) inbox.selectConversation(inbox.selectedId.value)
 }
 
 const openCustomerDemo = () => {
   mode.value = 'customer'
   customerConversationId.value = ''
+}
+
+const customerBack = () => {
+  if (customerConversationId.value) {
+    customerConversationId.value = ''
+    return
+  }
+  mode.value = 'chooser'
 }
 
 const openConversationFromDirectory = (id: string) => {
@@ -87,7 +96,7 @@ const updatePriority = (event: Event) => inbox.setPriority((event.target as HTML
 
   <main v-else-if="mode === 'customer'" class="customer-portal">
     <header class="portal-header">
-      <button class="back-button" @click="mode = 'chooser'; customerConversationId = ''">← Back</button>
+      <button class="back-button" @click="customerBack">← Back</button>
       <div><p class="eyebrow">SupportDesk</p><strong>Customer portal</strong></div>
       <span class="online-badge"><i></i> Support online</span>
     </header>

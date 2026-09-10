@@ -74,7 +74,9 @@ export const useSupportInbox = () => {
 
   const sendReply = (body: string) => {
     const conversation = selected.value
-    return conversation ? appendMessage(conversation, 'agent', body) : false
+    if (!conversation) return false
+    conversation.unread = 0
+    return appendMessage(conversation, 'agent', body)
   }
 
   const sendCustomerMessage = (conversationId: string, body: string) => {

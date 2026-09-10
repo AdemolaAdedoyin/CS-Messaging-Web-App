@@ -31,6 +31,16 @@ describe('useSupportInbox', () => {
     expect(target!.messages.at(-1)?.author).toBe('agent')
   })
 
+  it('clears unread state when replying to the active conversation', () => {
+    const inbox = useSupportInbox()
+    const active = inbox.selected.value
+    expect(active).toBeTruthy()
+    expect(active!.unread).toBeGreaterThan(0)
+
+    expect(inbox.sendReply('Thanks, I am on it.')).toBe(true)
+    expect(active!.unread).toBe(0)
+  })
+
   it('adds customer messages and increments unread state', () => {
     const inbox = useSupportInbox()
     const target = inbox.conversations.value[2]!

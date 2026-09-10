@@ -9,6 +9,7 @@ test.beforeEach(async ({ page }) => {
 test('agent can search, open, reply to, reprioritize, and resolve a conversation', async ({ page }) => {
   await page.getByRole('button', { name: 'Demo as support agent' }).click()
   await expect(page.getByRole('heading', { name: 'Inbox' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Maya Thompson/ }).locator('.unread')).toHaveCount(0)
 
   await page.getByLabel('Search conversations').fill('loan')
   await expect(page.getByText('Daniel Brooks')).toBeVisible()
@@ -43,17 +44,24 @@ test('agent navigation exposes working customers and reports views', async ({ pa
   await expect(page.getByRole('heading', { name: 'Inbox' })).toBeVisible()
 })
 
-test('customer can choose an identity and send a support message', async ({ page }) => {
+test('customer can choose an identity, navigate back to the picker, and send a support message', async ({ page }) => {
   await page.getByRole('button', { name: 'Demo as customer' }).click()
   await expect(page.getByRole('heading', { name: 'Which customer would you like to be?' })).toBeVisible()
 
   await page.getByRole('button', { name: /Daniel Brooks/ }).click()
   await expect(page.getByRole('heading', { name: 'Loan application status' })).toBeVisible()
 
+  await page.getByRole('button', { name: 'Back' }).click()
+  await expect(page.getByRole('heading', { name: 'Which customer would you like to be?' })).toBeVisible()
+
+  await page.getByRole('button', { name: /Daniel Brooks/ }).click()
   await page.getByLabel('Customer message').fill('Can you confirm whether you need anything else from me?')
   await page.getByRole('button', { name: /Send message/ }).click()
   await expect(page.getByText('Can you confirm whether you need anything else from me?')).toBeVisible()
 
   await page.getByRole('button', { name: 'Switch customer' }).click()
   await expect(page.getByText('Maya Thompson')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Back' }).click()
+  await expect(page.getByRole('heading', { name: 'SupportDesk' })).toBeVisible()
 })

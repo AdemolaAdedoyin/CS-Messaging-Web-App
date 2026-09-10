@@ -9,12 +9,12 @@ import {
   setDoc,
   updateDoc,
   where,
-  writeBatch,
   type DocumentData,
   type QueryDocumentSnapshot,
   type Unsubscribe,
 } from 'firebase/firestore'
 import {
+  onAuthStateChanged,
   signInAnonymously,
   signInWithEmailAndPassword,
   signOut,
@@ -78,6 +78,25 @@ const readProfile = async (user: User): Promise<RealtimeProfile> => {
   }
 }
 
+export const observeRealtimeProfile = (
+  callback: (profile: RealtimeProfile | null) => void,
+  onError: (error: Error) => void,
+): Unsubscribe => {
+  const services = requireFirebase()
+  return onAuthStateChanged(services.auth, async (user) => {
+    if (!user) {
+      callback(null)
+      return
+    }
+    try {
+      callback(await readProfile(user))
+    } catch (error) {
+      onError(error instanceof Error ? error : new Error('Unable to restore the realtime session.'))
+      callback(null)
+    }
+  })
+}
+
 export const signInRealtimeCustomer = async (displayName: string, email: string): Promise<RealtimeProfile> => {
   const services = requireFirebase()
   const credential = services.auth.currentUser?.isAnonymous
@@ -117,10 +136,8 @@ export const createRealtimeCase = async (
 ): Promise<string> => {
   const { db } = requireFirebase()
   const conversationRef = doc(collection(db, 'conversations'))
-  const messageRef = doc(collection(conversationRef, 'messages'))
-  const batch = writeBatch(db)
 
-  batch.set(conversationRef, {
+  await setDoc(conversationRef, {
     customerId: profile.uid,
     customerName: input.customerName.trim(),
     customerEmail: input.customerEmail.trim(),
@@ -133,7 +150,7 @@ export const createRealtimeCase = async (
     updatedAt: serverTimestamp(),
   })
 
-  batch.set(messageRef, {
+  await addDoc(collection(conversationRef, 'messages'), {
     authorId: profile.uid,
     authorRole: 'customer',
     authorName: profile.displayName,
@@ -141,7 +158,6 @@ export const createRealtimeCase = async (
     createdAt: serverTimestamp(),
   })
 
-  await batch.commit()
   return conversationRef.id
 }
 

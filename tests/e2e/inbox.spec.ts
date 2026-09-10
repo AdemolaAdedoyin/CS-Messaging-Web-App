@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 
 test('agent can search, open, reply to, and resolve a conversation', async ({ page }) => {
   await page.goto('/')
+  await page.getByRole('button', { name: 'Demo as support agent' }).click()
   await expect(page.getByRole('heading', { name: 'Inbox' })).toBeVisible()
 
   await page.getByLabel('Search conversations').fill('loan')
@@ -14,4 +15,14 @@ test('agent can search, open, reply to, and resolve a conversation', async ({ pa
 
   await page.getByLabel('Conversation status').selectOption('resolved')
   await expect(page.getByLabel('Conversation status')).toHaveValue('resolved')
+})
+
+test('customer can open the portal and send a support message', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Demo as customer' }).click()
+  await expect(page.getByText('Customer portal')).toBeVisible()
+
+  await page.getByLabel('Customer message').fill('Can you confirm whether I should retry the payment?')
+  await page.getByRole('button', { name: /Send message/ }).click()
+  await expect(page.getByText('Can you confirm whether I should retry the payment?')).toBeVisible()
 })

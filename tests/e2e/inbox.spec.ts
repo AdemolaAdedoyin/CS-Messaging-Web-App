@@ -65,3 +65,11 @@ test('customer can choose an identity, navigate back to the picker, and send a s
   await page.getByRole('button', { name: 'Back' }).click()
   await expect(page.getByRole('heading', { name: 'SupportDesk' })).toBeVisible()
 })
+
+test('realtime workspace fails gracefully when Firebase is not configured', async ({ page }) => {
+  await page.getByRole('button', { name: 'Realtime workspace' }).click()
+  await expect(page.getByRole('heading', { name: 'Ready for Firebase configuration.' })).toBeVisible()
+  await expect(page.getByText('Setup required')).toBeVisible()
+  await page.getByRole('button', { name: 'Return to portfolio demo' }).click()
+  await expect(page.getByRole('heading', { name: 'SupportDesk' })).toBeVisible()
+})

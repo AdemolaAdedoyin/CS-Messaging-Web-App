@@ -14,11 +14,15 @@
 
 .entry-copy { align-self: end; max-width: 760px; }
 .entry-copy h1 { font-size: clamp(4rem, 10vw, 8rem); line-height: .88; }
-.entry-copy > p:last-child { max-width: 620px; margin: 24px 0 0; color: var(--muted); font-size: 1.05rem; line-height: 1.7; }
+.entry-copy > p:last-child { max-width: 660px; margin: 24px 0 0; color: var(--muted); font-size: 1.05rem; line-height: 1.7; }
 .entry-options { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
 .entry-card { min-height: 230px; padding: 24px; border: 1px solid #ddd3c5; border-radius: 20px; background: #f7eee5; text-align: left; display: flex; flex-direction: column; align-items: flex-start; }
 .entry-card:hover { transform: translateY(-2px); border-color: #cda58f; box-shadow: 0 12px 30px rgba(70, 53, 35, .08); }
 .entry-card.customer-entry { background: #edf2ea; border-color: #d1dbcf; }
+.entry-card.realtime-entry { grid-column: 1 / -1; min-height: 190px; background: #294f40; border-color: #294f40; color: #fff; }
+.entry-card.realtime-entry p { max-width: 720px; color: rgba(255,255,255,.72); }
+.entry-card.realtime-entry .entry-icon { background: #f1b7a3; color: #294f40; }
+.entry-card.realtime-entry .entry-link { color: #f6bea9; }
 .entry-icon { width: 42px; height: 42px; margin-bottom: 34px; display: grid; place-items: center; border-radius: 50%; background: white; font-size: 1.1rem; }
 .entry-card strong { font-family: Georgia, 'Times New Roman', serif; font-size: 1.35rem; }
 .entry-card p { margin: 8px 0 22px; color: var(--muted); line-height: 1.55; }
@@ -46,7 +50,7 @@
   .entry-copy { align-self: center; }
   .entry-copy h1 { font-size: clamp(3.5rem, 19vw, 5.5rem); }
   .entry-options { grid-template-columns: 1fr; }
-  .entry-card { min-height: 190px; }
+  .entry-card, .entry-card.realtime-entry { grid-column: auto; min-height: 190px; }
   .entry-icon { margin-bottom: 20px; }
   .entry-footer { flex-direction: column; }
   .portal-header { grid-template-columns: auto 1fr auto; padding: 14px 12px; }

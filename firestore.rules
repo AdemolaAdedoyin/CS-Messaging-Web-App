@@ -1,0 +1,83 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function profile() {
+      return get(/databases/$(database)/documents/profiles/$(request.auth.uid));
+    }
+
+    function isAgent() {
+      return signedIn() && profile().data.role == 'agent';
+    }
+
+    function isCustomer() {
+      return signedIn() && profile().data.role == 'customer';
+    }
+
+    function ownsConversation(conversationId) {
+      return signedIn() &&
+        get(/databases/$(database)/documents/conversations/$(conversationId)).data.customerId == request.auth.uid;
+    }
+
+    match /profiles/{userId} {
+      allow read: if signedIn() && (request.auth.uid == userId || isAgent());
+
+      allow create: if signedIn() &&
+        request.auth.uid == userId &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.role == 'customer';
+
+      allow update: if signedIn() && (
+        isAgent() ||
+        (request.auth.uid == userId &&
+          resource.data.role == 'customer' &&
+          request.resource.data.role == 'customer' &&
+          request.resource.data.uid == request.auth.uid)
+      );
+
+      allow delete: if false;
+    }
+
+    match /conversations/{conversationId} {
+      allow read: if isAgent() || (signedIn() && resource.data.customerId == request.auth.uid);
+
+      allow create: if isCustomer() &&
+        request.resource.data.customerId == request.auth.uid &&
+        request.resource.data.status == 'open' &&
+        request.resource.data.priority == 'normal' &&
+        request.resource.data.assignedAgentId == null &&
+        request.resource.data.assignedAgentName == null &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.updatedAt == request.time;
+
+      allow update: if isAgent() || (
+        isCustomer() &&
+        resource.data.customerId == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt', 'status']) &&
+        request.resource.data.status == 'open' &&
+        request.resource.data.updatedAt == request.time
+      );
+
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if isAgent() || ownsConversation(conversationId);
+
+        allow create: if signedIn() &&
+          (isAgent() || ownsConversation(conversationId)) &&
+          request.resource.data.authorId == request.auth.uid &&
+          request.resource.data.authorRole == profile().data.role &&
+          request.resource.data.body is string &&
+          request.resource.data.body.size() > 0 &&
+          request.resource.data.body.size() <= 1200 &&
+          request.resource.data.createdAt == request.time;
+
+        allow update, delete: if false;
+      }
+    }
+  }
+}

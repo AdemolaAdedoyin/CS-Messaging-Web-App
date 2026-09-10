@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
+import RealtimeWorkspace from './components/realtime/RealtimeWorkspace.vue'
 import { useSupportInbox } from './composables/useSupportInbox'
 import type { ConversationStatus, Priority } from './types/support'
 
-type DemoMode = 'chooser' | 'agent' | 'customer'
+type DemoMode = 'chooser' | 'agent' | 'customer' | 'realtime'
 type AgentSection = 'inbox' | 'customers' | 'reports'
 
 const inbox = useSupportInbox()
@@ -72,7 +73,7 @@ const updatePriority = (event: Event) => inbox.setPriority((event.target as HTML
     <div class="entry-copy">
       <p class="eyebrow">Customer support messaging</p>
       <h1>SupportDesk</h1>
-      <p>Explore both sides of a production-style support workflow without creating an account.</p>
+      <p>Explore both sides of a production-style support workflow without creating an account, or open the realtime workspace for genuine cross-browser messaging.</p>
     </div>
     <div class="entry-options">
       <button class="entry-card" @click="openAgent">
@@ -87,12 +88,20 @@ const updatePriority = (event: Event) => inbox.setPriority((event.target as HTML
         <p>Choose a customer identity, open a support thread, and send messages into the shared demo model.</p>
         <span class="entry-link">Open customer portal →</span>
       </button>
+      <button class="entry-card realtime-entry" @click="mode = 'realtime'">
+        <span class="entry-icon">●</span>
+        <strong>Realtime workspace</strong>
+        <p>Run customer and agent sessions in separate browsers with Firebase-backed live messaging, assignment, and case updates.</p>
+        <span class="entry-link">Open live workspace →</span>
+      </button>
     </div>
     <footer class="entry-footer">
-      <span>Vue 3 · TypeScript · Vite</span>
+      <span>Vue 3 · TypeScript · Vite · Firebase</span>
       <a href="https://github.com/AdemolaAdedoyin/CS-Messaging-Web-App" target="_blank" rel="noreferrer">View source ↗</a>
     </footer>
   </main>
+
+  <RealtimeWorkspace v-else-if="mode === 'realtime'" @back="mode = 'chooser'" />
 
   <main v-else-if="mode === 'customer'" class="customer-portal">
     <header class="portal-header">

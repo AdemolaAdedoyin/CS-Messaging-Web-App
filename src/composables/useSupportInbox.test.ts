@@ -30,4 +30,37 @@ describe('useSupportInbox', () => {
     expect(target!.messages).toHaveLength(before + 1)
     expect(target!.messages.at(-1)?.author).toBe('agent')
   })
+
+  it('adds customer messages and increments unread state', () => {
+    const inbox = useSupportInbox()
+    const target = inbox.conversations.value[2]!
+    const beforeUnread = target.unread
+    const beforeMessages = target.messages.length
+
+    expect(inbox.sendCustomerMessage(target.id, 'I have one more question.')).toBe(true)
+    expect(target.messages).toHaveLength(beforeMessages + 1)
+    expect(target.messages.at(-1)?.author).toBe('customer')
+    expect(target.unread).toBe(beforeUnread + 1)
+  })
+
+  it('updates priority and exposes queue metrics', () => {
+    const inbox = useSupportInbox()
+    inbox.selectConversation('conv-3')
+    inbox.setPriority('high')
+
+    expect(inbox.selected.value?.priority).toBe('high')
+    expect(inbox.openCount.value).toBeGreaterThan(0)
+    expect(inbox.totalMessages.value).toBeGreaterThan(0)
+    expect(inbox.priorityCount.value).toBeGreaterThan(0)
+  })
+
+  it('resets the demo to seeded state', () => {
+    const inbox = useSupportInbox()
+    inbox.selectConversation('conv-1')
+    inbox.setStatus('resolved')
+    inbox.resetDemo()
+
+    expect(inbox.conversations.value.find((item) => item.id === 'conv-1')?.status).toBe('open')
+    expect(inbox.filter.value).toBe('all')
+  })
 })

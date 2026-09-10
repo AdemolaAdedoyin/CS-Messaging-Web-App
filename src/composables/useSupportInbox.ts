@@ -35,14 +35,13 @@ export const useSupportInbox = () => {
     if (conversation) conversation.unread = 0
   }
 
-  const sendReply = (body: string) => {
+  const appendMessage = (conversation: Conversation, author: 'customer' | 'agent', body: string) => {
     const trimmed = body.trim()
-    const conversation = selected.value
-    if (!trimmed || !conversation) return false
+    if (!trimmed) return false
 
     conversation.messages.push({
       id: crypto.randomUUID(),
-      author: 'agent',
+      author,
       body: trimmed,
       createdAt: new Date().toISOString(),
     })
@@ -51,9 +50,35 @@ export const useSupportInbox = () => {
     return true
   }
 
+  const sendReply = (body: string) => {
+    const conversation = selected.value
+    return conversation ? appendMessage(conversation, 'agent', body) : false
+  }
+
+  const sendCustomerMessage = (conversationId: string, body: string) => {
+    const conversation = conversations.value.find((item) => item.id === conversationId)
+    if (!conversation) return false
+    const sent = appendMessage(conversation, 'customer', body)
+    if (sent) conversation.unread += 1
+    return sent
+  }
+
   const setStatus = (status: ConversationStatus) => {
     if (selected.value) selected.value.status = status
   }
 
-  return { conversations, selectedId, selected, search, filter, filtered, openCount, priorityCount, selectConversation, sendReply, setStatus }
+  return {
+    conversations,
+    selectedId,
+    selected,
+    search,
+    filter,
+    filtered,
+    openCount,
+    priorityCount,
+    selectConversation,
+    sendReply,
+    sendCustomerMessage,
+    setStatus,
+  }
 }

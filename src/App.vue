@@ -3,11 +3,15 @@ import { computed, nextTick, ref } from 'vue'
 import { useSupportInbox } from './composables/useSupportInbox'
 import type { ConversationStatus, Priority } from './types/support'
 
+type DemoMode = 'chooser' | 'agent' | 'customer'
+
 const inbox = useSupportInbox()
+const mode = ref<DemoMode>('chooser')
 const reply = ref('')
+const customerMessage = ref('')
 const showCustomer = ref(true)
 const messageList = ref<HTMLElement | null>(null)
-
+const customerConversation = computed(() => inbox.conversations.value[0] ?? null)
 const selected = inbox.selected
 const initials = computed(() => selected.value?.customerName.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase() ?? '')
 
@@ -22,13 +26,84 @@ const submitReply = async () => {
   messageList.value?.scrollTo({ top: messageList.value.scrollHeight, behavior: 'smooth' })
 }
 
+const submitCustomerMessage = async () => {
+  const conversation = customerConversation.value
+  if (!conversation || !inbox.sendCustomerMessage(conversation.id, customerMessage.value)) return
+  customerMessage.value = ''
+  await nextTick()
+  messageList.value?.scrollTo({ top: messageList.value.scrollHeight, behavior: 'smooth' })
+}
+
 const updateStatus = (event: Event) => inbox.setStatus((event.target as HTMLSelectElement).value as ConversationStatus)
 </script>
 
 <template>
-  <main class="workspace">
+  <main v-if="mode === 'chooser'" class="demo-entry">
+    <div class="entry-copy">
+      <p class="eyebrow">Customer support messaging</p>
+      <h1>SupportDesk</h1>
+      <p>Explore both sides of a production-style support workflow without creating an account.</p>
+    </div>
+    <div class="entry-options">
+      <button class="entry-card" @click="mode = 'agent'">
+        <span class="entry-icon">↗</span>
+        <strong>Demo as support agent</strong>
+        <p>Triage conversations, search the inbox, update statuses, and reply to customers.</p>
+        <span class="entry-link">Open agent workspace →</span>
+      </button>
+      <button class="entry-card customer-entry" @click="mode = 'customer'">
+        <span class="entry-icon">◌</span>
+        <strong>Demo as customer</strong>
+        <p>View a support thread and send a message into the same demo conversation model.</p>
+        <span class="entry-link">Open customer portal →</span>
+      </button>
+    </div>
+    <footer class="entry-footer">
+      <span>Vue 3 · TypeScript · Vite</span>
+      <a href="https://github.com/AdemolaAdedoyin/CS-Messaging-Web-App" target="_blank" rel="noreferrer">View source ↗</a>
+    </footer>
+  </main>
+
+  <main v-else-if="mode === 'customer'" class="customer-portal">
+    <header class="portal-header">
+      <button class="back-button" @click="mode = 'chooser'">← Back</button>
+      <div><p class="eyebrow">SupportDesk</p><strong>Customer portal</strong></div>
+      <span class="online-badge"><i></i> Support online</span>
+    </header>
+
+    <section v-if="customerConversation" class="portal-card">
+      <div class="portal-intro">
+        <span class="avatar xlarge">MT</span>
+        <div>
+          <p class="eyebrow">Case #{{ customerConversation.id.replace('conv-', '') }}</p>
+          <h1>{{ customerConversation.subject }}</h1>
+          <p>Your conversation is assigned to {{ customerConversation.assignedTo }}. Replies in this portfolio demo stay in the current browser session.</p>
+        </div>
+      </div>
+
+      <div ref="messageList" class="portal-messages">
+        <article v-for="message in customerConversation.messages" :key="message.id" class="message" :class="message.author">
+          <div class="message-avatar">{{ message.author === 'agent' ? 'AA' : 'MT' }}</div>
+          <div>
+            <div class="message-meta"><strong>{{ message.author === 'agent' ? 'Support' : 'You' }}</strong><time>{{ formatTime(message.createdAt) }}</time></div>
+            <p>{{ message.body }}</p>
+          </div>
+        </article>
+      </div>
+
+      <form class="composer portal-composer" @submit.prevent="submitCustomerMessage">
+        <textarea v-model="customerMessage" maxlength="1200" placeholder="Send a message to support…" aria-label="Customer message"></textarea>
+        <div class="composer-footer">
+          <span>Status: {{ customerConversation.status }}</span>
+          <button type="submit" :disabled="!customerMessage.trim()">Send message <span>↗</span></button>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <main v-else class="workspace">
     <aside class="rail" aria-label="Primary navigation">
-      <a href="#" class="logo" aria-label="SupportDesk home">S</a>
+      <button class="logo" aria-label="Return to demo selection" @click="mode = 'chooser'">S</button>
       <nav>
         <button class="rail-button active" aria-label="Inbox">⌁</button>
         <button class="rail-button" aria-label="Customers">◉</button>
@@ -39,52 +114,27 @@ const updateStatus = (event: Event) => inbox.setStatus((event.target as HTMLSele
 
     <section class="inbox-pane">
       <header class="inbox-header">
-        <div>
-          <p class="eyebrow">SupportDesk</p>
-          <h1>Inbox</h1>
-        </div>
+        <div><p class="eyebrow">SupportDesk</p><h1>Inbox</h1></div>
         <span class="online-badge"><i></i> Online</span>
       </header>
-
       <div class="summary-row">
         <div><strong>{{ inbox.openCount.value }}</strong><span>Open</span></div>
         <div><strong>{{ inbox.priorityCount.value }}</strong><span>Priority</span></div>
         <div><strong>{{ inbox.conversations.value.length }}</strong><span>Total</span></div>
       </div>
-
-      <label class="search-box">
-        <span>⌕</span>
-        <input v-model="inbox.search.value" type="search" placeholder="Search conversations" aria-label="Search conversations" />
-      </label>
-
+      <label class="search-box"><span>⌕</span><input v-model="inbox.search.value" type="search" placeholder="Search conversations" aria-label="Search conversations" /></label>
       <div class="filters" aria-label="Conversation filters">
-        <button v-for="option in ['all','priority','open','pending','resolved']" :key="option" :class="{ active: inbox.filter.value === option }" @click="inbox.filter.value = option as typeof inbox.filter.value">
-          {{ option }}
-        </button>
+        <button v-for="option in ['all','priority','open','pending','resolved']" :key="option" :class="{ active: inbox.filter.value === option }" @click="inbox.filter.value = option as typeof inbox.filter.value">{{ option }}</button>
       </div>
-
       <div class="conversation-list" aria-live="polite">
-        <button
-          v-for="conversation in inbox.filtered.value"
-          :key="conversation.id"
-          class="conversation-card"
-          :class="{ selected: inbox.selectedId.value === conversation.id }"
-          @click="inbox.selectConversation(conversation.id)"
-        >
+        <button v-for="conversation in inbox.filtered.value" :key="conversation.id" class="conversation-card" :class="{ selected: inbox.selectedId.value === conversation.id }" @click="inbox.selectConversation(conversation.id)">
           <div class="avatar">{{ conversation.customerName.split(' ').map((part) => part[0]).join('').slice(0,2) }}</div>
           <div class="conversation-copy">
-            <div class="conversation-topline">
-              <strong>{{ conversation.customerName }}</strong>
-              <time>{{ formatDate(conversation.updatedAt) }}</time>
-            </div>
+            <div class="conversation-topline"><strong>{{ conversation.customerName }}</strong><time>{{ formatDate(conversation.updatedAt) }}</time></div>
             <p>{{ conversation.subject }}</p>
-            <div class="conversation-meta">
-              <span class="priority-dot" :data-priority="conversation.priority">{{ priorityLabel(conversation.priority) }}</span>
-              <span v-if="conversation.unread" class="unread">{{ conversation.unread }}</span>
-            </div>
+            <div class="conversation-meta"><span class="priority-dot" :data-priority="conversation.priority">{{ priorityLabel(conversation.priority) }}</span><span v-if="conversation.unread" class="unread">{{ conversation.unread }}</span></div>
           </div>
         </button>
-
         <div v-if="!inbox.filtered.value.length" class="empty-state">No conversations match this filter.</div>
       </div>
     </section>
@@ -93,66 +143,33 @@ const updateStatus = (event: Event) => inbox.setStatus((event.target as HTMLSele
       <header class="conversation-header">
         <div class="customer-heading">
           <div class="avatar large">{{ initials }}</div>
-          <div>
-            <div class="name-row"><h2>{{ selected.customerName }}</h2><span class="priority-pill" :data-priority="selected.priority">{{ selected.priority }}</span></div>
-            <p>{{ selected.subject }}</p>
-          </div>
+          <div><div class="name-row"><h2>{{ selected.customerName }}</h2><span class="priority-pill" :data-priority="selected.priority">{{ selected.priority }}</span></div><p>{{ selected.subject }}</p></div>
         </div>
         <div class="conversation-actions">
-          <select :value="selected.status" aria-label="Conversation status" @change="updateStatus">
-            <option value="open">Open</option>
-            <option value="pending">Pending</option>
-            <option value="resolved">Resolved</option>
-          </select>
+          <select :value="selected.status" aria-label="Conversation status" @change="updateStatus"><option value="open">Open</option><option value="pending">Pending</option><option value="resolved">Resolved</option></select>
           <button class="icon-button" :aria-label="showCustomer ? 'Hide customer details' : 'Show customer details'" @click="showCustomer = !showCustomer">ⓘ</button>
         </div>
       </header>
-
       <div ref="messageList" class="messages">
         <div class="day-divider"><span>Today</span></div>
         <article v-for="message in selected.messages" :key="message.id" class="message" :class="message.author">
           <div class="message-avatar">{{ message.author === 'agent' ? 'AA' : initials }}</div>
-          <div>
-            <div class="message-meta"><strong>{{ message.author === 'agent' ? 'You' : selected.customerName }}</strong><time>{{ formatTime(message.createdAt) }}</time></div>
-            <p>{{ message.body }}</p>
-          </div>
+          <div><div class="message-meta"><strong>{{ message.author === 'agent' ? 'You' : selected.customerName }}</strong><time>{{ formatTime(message.createdAt) }}</time></div><p>{{ message.body }}</p></div>
         </article>
       </div>
-
       <form class="composer" @submit.prevent="submitReply">
         <textarea v-model="reply" maxlength="1200" placeholder="Write a reply…" aria-label="Reply message"></textarea>
-        <div class="composer-footer">
-          <span>Demo workspace · replies stay in this session</span>
-          <button type="submit" :disabled="!reply.trim()">Send reply <span>↗</span></button>
-        </div>
+        <div class="composer-footer"><span>Demo workspace · replies stay in this session</span><button type="submit" :disabled="!reply.trim()">Send reply <span>↗</span></button></div>
       </form>
     </section>
 
     <aside v-if="selected && showCustomer" class="details-pane">
-      <div class="details-profile">
-        <div class="avatar xlarge">{{ initials }}</div>
-        <h3>{{ selected.customerName }}</h3>
-        <p>Customer</p>
-      </div>
-
+      <div class="details-profile"><div class="avatar xlarge">{{ initials }}</div><h3>{{ selected.customerName }}</h3><p>Customer</p></div>
       <dl class="details-list">
-        <div><dt>Email</dt><dd>{{ selected.email }}</dd></div>
-        <div><dt>Phone</dt><dd>{{ selected.phone }}</dd></div>
-        <div><dt>Assigned to</dt><dd>{{ selected.assignedTo }}</dd></div>
-        <div><dt>Status</dt><dd class="capitalize">{{ selected.status }}</dd></div>
-        <div><dt>Priority</dt><dd class="capitalize">{{ selected.priority }}</dd></div>
+        <div><dt>Email</dt><dd>{{ selected.email }}</dd></div><div><dt>Phone</dt><dd>{{ selected.phone }}</dd></div><div><dt>Assigned to</dt><dd>{{ selected.assignedTo }}</dd></div><div><dt>Status</dt><dd class="capitalize">{{ selected.status }}</dd></div><div><dt>Priority</dt><dd class="capitalize">{{ selected.priority }}</dd></div>
       </dl>
-
-      <section class="context-card">
-        <span>Conversation context</span>
-        <strong>{{ selected.subject }}</strong>
-        <p>{{ selected.messages.length }} messages in this thread</p>
-      </section>
-
-      <footer class="details-footer">
-        <span>Portfolio demo</span>
-        <a href="https://github.com/AdemolaAdedoyin/CS-Messaging-Web-App" target="_blank" rel="noreferrer">View source ↗</a>
-      </footer>
+      <section class="context-card"><span>Conversation context</span><strong>{{ selected.subject }}</strong><p>{{ selected.messages.length }} messages in this thread</p></section>
+      <footer class="details-footer"><span>Portfolio demo</span><a href="https://github.com/AdemolaAdedoyin/CS-Messaging-Web-App" target="_blank" rel="noreferrer">View source ↗</a></footer>
     </aside>
   </main>
 </template>

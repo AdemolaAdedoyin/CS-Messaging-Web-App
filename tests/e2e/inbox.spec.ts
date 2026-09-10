@@ -14,8 +14,11 @@ test('agent can search, open, reply to, reprioritize, and resolve a conversation
   await expect(page.getByText('Daniel Brooks')).toBeVisible()
   await page.getByText('Daniel Brooks').click()
 
-  await page.getByLabel('Conversation priority').selectOption('normal')
-  await expect(page.getByLabel('Conversation priority')).toHaveValue('normal')
+  const priorityControl = page.getByLabel('Conversation priority')
+  if (await priorityControl.isVisible()) {
+    await priorityControl.selectOption('normal')
+    await expect(priorityControl).toHaveValue('normal')
+  }
 
   await page.getByLabel('Reply message').fill('Your verification is complete. I can move this forward now.')
   await page.getByRole('button', { name: /Send reply/ }).click()

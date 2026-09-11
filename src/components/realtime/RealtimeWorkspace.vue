@@ -30,7 +30,7 @@ const messages = ref<RealtimeMessage[]>([])
 const loading = ref(false)
 const messagesLoading = ref(false)
 const error = ref('')
-const notice = ref('')
+const threadError = ref('')
 
 const customerAuthMode = ref<CustomerAuthMode>('signin')
 const customerName = ref('')
@@ -85,6 +85,7 @@ const ensureMessageSubscription = (id = selectedId.value) => {
     clearMessageSubscription()
     messages.value = []
     messagesLoading.value = false
+    threadError.value = ''
     return
   }
 
@@ -93,14 +94,16 @@ const ensureMessageSubscription = (id = selectedId.value) => {
   clearMessageSubscription()
   messages.value = []
   messagesLoading.value = true
+  threadError.value = ''
   subscribedMessageId = id
   subscribedUserId = uid
   unsubscribeMessages = subscribeRealtimeMessages(id, (next) => {
     messages.value = next
     messagesLoading.value = false
+    threadError.value = ''
   }, (reason) => {
     messagesLoading.value = false
-    error.value = reason.message
+    threadError.value = reason.message
   })
 }
 
@@ -113,15 +116,28 @@ const markSelectedRead = async () => {
 
   try {
     await markRealtimeConversationRead(selected.value.id, profile.value.role)
-  } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : 'Unable to update the unread state.'
+  } catch {
+    // Read receipts are non-critical. A failed unread-state update should never
+    // block an otherwise healthy conversation or surface as a case-creation error.
   }
 }
 
 const selectConversation = async (id: string) => {
+  error.value = ''
+  threadError.value = ''
   selectedId.value = id
   ensureMessageSubscription(id)
   await markSelectedRead()
+}
+
+const startNewCase = () => {
+  error.value = ''
+  threadError.value = ''
+  subject.value = ''
+  openingMessage.value = ''
+  reply.value = ''
+  selectedId.value = ''
+  ensureMessageSubscription('')
 }
 
 const subscribeForProfile = (nextProfile: RealtimeProfile) => {
@@ -160,7 +176,7 @@ onUnmounted(() => {
 const chooseRole = (nextRole: RealtimeRole) => {
   role.value = nextRole
   error.value = ''
-  notice.value = ''
+  threadError.value = ''
 }
 
 const startCustomerSession = async () => {
@@ -188,6 +204,7 @@ const createCase = async () => {
   if (!profile.value || !subject.value.trim() || !openingMessage.value.trim()) return
   loading.value = true
   error.value = ''
+  threadError.value = ''
   try {
     const caseId = await createRealtimeCase(profile.value, {
       customerName: profile.value.displayName,
@@ -199,7 +216,6 @@ const createCase = async () => {
     ensureMessageSubscription(caseId)
     subject.value = ''
     openingMessage.value = ''
-    notice.value = 'Case created. An agent will see it immediately in the realtime inbox.'
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : 'Unable to create the support case.'
   } finally {
@@ -232,6 +248,7 @@ const send = async () => {
   const body = reply.value
   reply.value = ''
   error.value = ''
+  threadError.value = ''
   try {
     await sendRealtimeMessage(selected.value.id, profile.value, body)
   } catch (reason) {
@@ -269,7 +286,7 @@ const leaveSession = async () => {
   messages.value = []
   role.value = null
   error.value = ''
-  notice.value = ''
+  threadError.value = ''
 }
 </script>
 
@@ -348,7 +365,7 @@ const leaveSession = async () => {
           <span>{{ conversation.status }} · {{ formatDate(conversation.updatedAt) }}</span>
           <b v-if="unreadFor(conversation)" class="live-unread">{{ unreadFor(conversation) }}</b>
         </button>
-        <button class="new-case-button" @click="selectedId = ''">＋ New support case</button>
+        <button class="new-case-button" @click="startNewCase">＋ New support case</button>
       </aside>
 
       <section v-if="!selected" class="new-case-panel">
@@ -357,7 +374,6 @@ const leaveSession = async () => {
         <form @submit.prevent="createCase">
           <label>Subject<input v-model="subject" maxlength="100" required placeholder="Briefly describe the issue" /></label>
           <label>Message<textarea v-model="openingMessage" maxlength="1200" required placeholder="Tell us what happened…"></textarea></label>
-          <p v-if="notice" class="realtime-notice">{{ notice }}</p>
           <p v-if="error" class="realtime-error">{{ error }}</p>
           <button class="realtime-primary" :disabled="loading">{{ loading ? 'Creating…' : 'Create support case' }}</button>
         </form>
@@ -372,6 +388,7 @@ const leaveSession = async () => {
           </article>
           <p v-if="messagesLoading" class="live-empty">Loading conversation messages…</p>
           <p v-else-if="!messages.length" class="live-empty">No messages in this conversation yet.</p>
+          <p v-if="threadError" class="realtime-error live-thread-error">{{ threadError }}</p>
           <p v-if="error" class="realtime-error live-thread-error">{{ error }}</p>
         </div>
         <form class="live-composer" @submit.prevent="send">
@@ -410,10 +427,11 @@ const leaveSession = async () => {
           </article>
           <p v-if="messagesLoading" class="live-empty">Loading conversation messages…</p>
           <p v-else-if="!messages.length" class="live-empty">No messages in this conversation yet.</p>
+          <p v-if="threadError" class="realtime-error live-thread-error">{{ threadError }}</p>
           <p v-if="error" class="realtime-error live-thread-error">{{ error }}</p>
         </div>
         <form class="live-composer" @submit.prevent="send">
-          <textarea v-model="reply" maxlength="1200" aria-label="Live agent reply" :disabled="!canAgentReply" :placeholder="canAgentReply ? 'Write a live reply…' : 'Assign this case to yourself before replying' "></textarea>
+          <textarea v-model="reply" maxlength="1200" aria-label="Live agent reply" :disabled="!canAgentReply" :placeholder="canAgentReply ? 'Write a live reply…' : 'Assign this case to yourself before replying'"></textarea>
           <div><span>{{ reply.length }}/1200</span><button class="realtime-primary" :disabled="!reply.trim() || !canAgentReply">Send reply</button></div>
         </form>
       </section>

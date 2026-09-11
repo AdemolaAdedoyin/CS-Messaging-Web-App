@@ -5,6 +5,7 @@ import {
   assignRealtimeConversation,
   createRealtimeCase,
   createRealtimeCustomerAccount,
+  markRealtimeConversationRead,
   observeRealtimeProfile,
   sendRealtimeMessage,
   signInRealtimeAgent,
@@ -27,6 +28,7 @@ const conversations = ref<RealtimeConversation[]>([])
 const selectedId = ref('')
 const messages = ref<RealtimeMessage[]>([])
 const loading = ref(false)
+const messagesLoading = ref(false)
 const error = ref('')
 const notice = ref('')
 
@@ -43,13 +45,22 @@ const agentPassword = ref('')
 let unsubscribeAuth: (() => void) | null = null
 let unsubscribeConversations: (() => void) | null = null
 let unsubscribeMessages: (() => void) | null = null
+let subscribedMessageId = ''
+let subscribedUserId = ''
 
 const selected = computed(() => conversations.value.find((item) => item.id === selectedId.value) ?? null)
 const unassignedCount = computed(() => conversations.value.filter((item) => !item.assignedAgentId && item.status !== 'resolved').length)
+const canAgentReply = computed(() => {
+  if (!profile.value || profile.value.role !== 'agent' || !selected.value) return true
+  return selected.value.assignedAgentId === profile.value.uid
+})
 
 const formatTime = (date: Date) => new Intl.DateTimeFormat('en', { hour: 'numeric', minute: '2-digit' }).format(date)
 const formatDate = (date: Date) => new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' }).format(date)
 const initials = (name: string) => name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase()
+const unreadFor = (conversation: RealtimeConversation) => profile.value?.role === 'agent'
+  ? conversation.agentUnreadCount
+  : conversation.customerUnreadCount
 
 const clearConversationSubscription = () => {
   unsubscribeConversations?.()
@@ -59,6 +70,8 @@ const clearConversationSubscription = () => {
 const clearMessageSubscription = () => {
   unsubscribeMessages?.()
   unsubscribeMessages = null
+  subscribedMessageId = ''
+  subscribedUserId = ''
 }
 
 const clearSubscriptions = () => {
@@ -66,30 +79,65 @@ const clearSubscriptions = () => {
   clearMessageSubscription()
 }
 
+const ensureMessageSubscription = (id = selectedId.value) => {
+  const uid = profile.value?.uid ?? ''
+  if (!id || !uid) {
+    clearMessageSubscription()
+    messages.value = []
+    messagesLoading.value = false
+    return
+  }
+
+  if (unsubscribeMessages && subscribedMessageId === id && subscribedUserId === uid) return
+
+  clearMessageSubscription()
+  messages.value = []
+  messagesLoading.value = true
+  subscribedMessageId = id
+  subscribedUserId = uid
+  unsubscribeMessages = subscribeRealtimeMessages(id, (next) => {
+    messages.value = next
+    messagesLoading.value = false
+  }, (reason) => {
+    messagesLoading.value = false
+    error.value = reason.message
+  })
+}
+
+const markSelectedRead = async () => {
+  if (!profile.value || !selected.value) return
+  const unreadCount = profile.value.role === 'agent'
+    ? selected.value.agentUnreadCount
+    : selected.value.customerUnreadCount
+  if (!unreadCount) return
+
+  try {
+    await markRealtimeConversationRead(selected.value.id, profile.value.role)
+  } catch (reason) {
+    error.value = reason instanceof Error ? reason.message : 'Unable to update the unread state.'
+  }
+}
+
+const selectConversation = async (id: string) => {
+  selectedId.value = id
+  ensureMessageSubscription(id)
+  await markSelectedRead()
+}
+
 const subscribeForProfile = (nextProfile: RealtimeProfile) => {
   clearConversationSubscription()
   unsubscribeConversations = subscribeRealtimeConversations(nextProfile, (next) => {
     conversations.value = next
     if (!next.some((item) => item.id === selectedId.value)) selectedId.value = next[0]?.id ?? ''
+    ensureMessageSubscription()
+    if (nextProfile.role === 'customer' && selectedId.value) void markSelectedRead()
   }, (reason) => {
     error.value = reason.message
   })
 }
 
-watch(
-  [selectedId, () => profile.value?.uid],
-  ([id, uid]) => {
-    clearMessageSubscription()
-    messages.value = []
-    if (!id || !uid) return
-    unsubscribeMessages = subscribeRealtimeMessages(id, (next) => {
-      messages.value = next
-    }, (reason) => {
-      error.value = reason.message
-    })
-  },
-  { immediate: true },
-)
+watch(selectedId, () => ensureMessageSubscription())
+watch(() => profile.value?.uid, () => ensureMessageSubscription())
 
 onMounted(() => {
   if (!isFirebaseConfigured) return
@@ -141,12 +189,14 @@ const createCase = async () => {
   loading.value = true
   error.value = ''
   try {
-    selectedId.value = await createRealtimeCase(profile.value, {
+    const caseId = await createRealtimeCase(profile.value, {
       customerName: profile.value.displayName,
       customerEmail: profile.value.email,
       subject: subject.value,
       message: openingMessage.value,
     })
+    selectedId.value = caseId
+    ensureMessageSubscription(caseId)
     subject.value = ''
     openingMessage.value = ''
     notice.value = 'Case created. An agent will see it immediately in the realtime inbox.'
@@ -174,6 +224,11 @@ const loginAgent = async () => {
 
 const send = async () => {
   if (!profile.value || !selected.value || !reply.value.trim()) return
+  if (profile.value.role === 'agent' && !canAgentReply.value) {
+    error.value = 'Assign this case to yourself before sending a reply.'
+    return
+  }
+
   const body = reply.value
   reply.value = ''
   error.value = ''
@@ -187,7 +242,12 @@ const send = async () => {
 
 const assignToMe = async () => {
   if (!profile.value || profile.value.role !== 'agent' || !selected.value) return
-  await assignRealtimeConversation(selected.value.id, profile.value)
+  error.value = ''
+  try {
+    await assignRealtimeConversation(selected.value.id, profile.value)
+  } catch (reason) {
+    error.value = reason instanceof Error ? reason.message : 'Unable to assign this case.'
+  }
 }
 
 const setStatus = async (event: Event) => {
@@ -283,9 +343,10 @@ const leaveSession = async () => {
     <section v-else-if="profile?.role === 'customer'" class="live-customer-layout">
       <aside class="live-customer-list">
         <div class="live-section-heading"><div><p class="realtime-kicker">Signed in as</p><h2>{{ profile.displayName }}</h2></div><span>{{ conversations.length }} cases</span></div>
-        <button v-for="conversation in conversations" :key="conversation.id" :class="{ active: conversation.id === selectedId }" @click="selectedId = conversation.id">
+        <button v-for="conversation in conversations" :key="conversation.id" :class="{ active: conversation.id === selectedId }" @click="selectConversation(conversation.id)">
           <strong>{{ conversation.subject }}</strong>
           <span>{{ conversation.status }} · {{ formatDate(conversation.updatedAt) }}</span>
+          <b v-if="unreadFor(conversation)" class="live-unread">{{ unreadFor(conversation) }}</b>
         </button>
         <button class="new-case-button" @click="selectedId = ''">＋ New support case</button>
       </aside>
@@ -309,7 +370,9 @@ const leaveSession = async () => {
             <div class="live-avatar">{{ initials(message.authorName) }}</div>
             <div><div class="live-message-meta"><strong>{{ message.authorRole === 'customer' ? 'You' : message.authorName }}</strong><time>{{ formatTime(message.createdAt) }}</time></div><p>{{ message.body }}</p></div>
           </article>
-          <p v-if="!messages.length" class="live-empty">Loading conversation messages…</p>
+          <p v-if="messagesLoading" class="live-empty">Loading conversation messages…</p>
+          <p v-else-if="!messages.length" class="live-empty">No messages in this conversation yet.</p>
+          <p v-if="error" class="realtime-error live-thread-error">{{ error }}</p>
         </div>
         <form class="live-composer" @submit.prevent="send">
           <textarea v-model="reply" maxlength="1200" aria-label="Live customer message" placeholder="Send a message to support…"></textarea>
@@ -321,10 +384,11 @@ const leaveSession = async () => {
     <section v-else-if="profile?.role === 'agent'" class="live-agent-layout">
       <aside class="live-agent-list">
         <div class="live-section-heading"><div><p class="realtime-kicker">Live queue</p><h2>Inbox</h2></div><span>{{ unassignedCount }} unassigned</span></div>
-        <button v-for="conversation in conversations" :key="conversation.id" :class="{ active: conversation.id === selectedId }" @click="selectedId = conversation.id">
+        <button v-for="conversation in conversations" :key="conversation.id" :class="{ active: conversation.id === selectedId }" @click="selectConversation(conversation.id)">
           <div><strong>{{ conversation.customerName }}</strong><time>{{ formatDate(conversation.updatedAt) }}</time></div>
           <p>{{ conversation.subject }}</p>
           <span>{{ conversation.priority }} · {{ conversation.assignedAgentName ?? 'Unassigned' }}</span>
+          <b v-if="conversation.agentUnreadCount" class="live-unread">{{ conversation.agentUnreadCount }}</b>
         </button>
         <p v-if="!conversations.length" class="live-empty">Waiting for the first customer case…</p>
       </aside>
@@ -338,16 +402,19 @@ const leaveSession = async () => {
             <select :value="selected.status" aria-label="Live conversation status" @change="setStatus"><option value="open">Open</option><option value="pending">Pending</option><option value="resolved">Resolved</option></select>
           </div>
         </header>
-        <div class="live-assignment">{{ selected.assignedAgentName ? `Assigned to ${selected.assignedAgentName}` : 'Unassigned case' }}</div>
+        <div class="live-assignment">{{ selected.assignedAgentName ? `Assigned to ${selected.assignedAgentName}` : 'Unassigned case — assign it to yourself before replying' }}</div>
         <div class="live-messages">
           <article v-for="message in messages" :key="message.id" :class="message.authorRole">
             <div class="live-avatar">{{ initials(message.authorName) }}</div>
             <div><div class="live-message-meta"><strong>{{ message.authorRole === 'agent' && message.authorId === profile.uid ? 'You' : message.authorName }}</strong><time>{{ formatTime(message.createdAt) }}</time></div><p>{{ message.body }}</p></div>
           </article>
+          <p v-if="messagesLoading" class="live-empty">Loading conversation messages…</p>
+          <p v-else-if="!messages.length" class="live-empty">No messages in this conversation yet.</p>
+          <p v-if="error" class="realtime-error live-thread-error">{{ error }}</p>
         </div>
         <form class="live-composer" @submit.prevent="send">
-          <textarea v-model="reply" maxlength="1200" aria-label="Live agent reply" placeholder="Write a live reply…"></textarea>
-          <div><span>{{ reply.length }}/1200</span><button class="realtime-primary" :disabled="!reply.trim()">Send reply</button></div>
+          <textarea v-model="reply" maxlength="1200" aria-label="Live agent reply" :disabled="!canAgentReply" :placeholder="canAgentReply ? 'Write a live reply…' : 'Assign this case to yourself before replying' "></textarea>
+          <div><span>{{ reply.length }}/1200</span><button class="realtime-primary" :disabled="!reply.trim() || !canAgentReply">Send reply</button></div>
         </form>
       </section>
 

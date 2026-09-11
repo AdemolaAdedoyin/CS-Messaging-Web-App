@@ -28,7 +28,9 @@ SupportDesk v3 provides a Firebase-backed path designed for separate browsers or
 - Support agents sign in with a pre-provisioned Firebase email/password account
 - Agents subscribe to the shared queue in real time
 - New customer cases appear in the agent inbox without refreshing
-- Agents can claim unassigned cases, update priority/status, and reply
+- Realtime conversations maintain separate agent/customer unread counts
+- Agents must claim a case before they can reply to it
+- Agents can update priority/status after opening a case
 - Customer and agent message threads update from Firestore snapshots
 - Existing authenticated sessions are restored by Firebase Auth
 - Firestore security rules prevent customers from reading other customers' cases or promoting themselves to agents
@@ -65,10 +67,10 @@ The browser-backed demo uses:
 The realtime path uses:
 
 - `src/firebase/client.ts` — environment-driven Firebase initialization
-- `src/types/realtime.ts` — realtime profile, conversation, and message types
-- `src/repositories/firebaseSupportRepository.ts` — authentication, Firestore subscriptions, case creation, assignment, updates, and messaging
+- `src/types/realtime.ts` — realtime profile, conversation, unread-state, and message types
+- `src/repositories/firebaseSupportRepository.ts` — authentication, Firestore subscriptions, atomic case/message writes, assignment, unread state, updates, and messaging
 - `src/components/realtime/RealtimeWorkspace.vue` — customer and agent realtime presentation/workflows
-- `firestore.rules` — role-aware authorization rules
+- `firestore.rules` — role-aware authorization rules, including assigned-agent reply enforcement
 
 The UI does not directly query Firestore. Realtime persistence is isolated behind the repository layer so the backend can be changed later without rebuilding the presentation layer.
 
@@ -95,6 +97,8 @@ For realtime development, copy `.env.example` to `.env.local` and add the Fireba
 8. Open **Realtime workspace → Customer** in one browser and **Realtime workspace → Support agent** in another browser to verify cross-session behavior.
 
 Firebase Web App configuration values identify the Firebase project; authorization is enforced by Firebase Auth and `firestore.rules`. Do not put service-account private keys or Firebase Admin credentials in the frontend or Vercel `VITE_*` variables.
+
+**Important:** Firestore rules are not deployed automatically by a normal Vercel/GitHub frontend deployment. Whenever `firestore.rules` changes, publish the updated rules in Firebase Console or deploy them with the Firebase CLI before testing the new realtime behavior.
 
 ### Adding a support agent
 
@@ -142,9 +146,15 @@ Cases are stored against that immutable Firebase Auth UID. Because of that, sign
 
 Earlier v3 builds used Anonymous Auth for customer sessions. Anonymous identities cannot be recovered after an explicit sign-out because Firebase creates a different UID the next time. The current version uses persistent customer accounts instead. If Anonymous Auth was enabled while setting up an older build, it can now be disabled unless you intentionally add a guest-customer mode later.
 
+## Realtime conversation behavior
+
+New cases are created with the opening customer message in the same Firestore batch, so the conversation and its first message become visible together. Customer messages increment the agent unread count; agent replies increment the customer unread count. Opening a conversation clears the appropriate unread count for that viewer.
+
+An unassigned case can be inspected and triaged, but an agent cannot send a customer-visible reply until the case is assigned to that agent. This restriction is enforced in both the UI and Firestore security rules, not only by disabling the button in the browser.
+
 ## Firestore security model
 
-Customer profiles can only be created as `customer`; client code cannot self-provision an `agent` profile. Customers can read their own conversations and messages, create their own cases, and append messages to those cases. Agents can read the support queue and update assignment, status, priority, and messages.
+Customer profiles can only be created as `customer`; client code cannot self-provision an `agent` profile. Customers can read their own conversations and messages, create their own cases, and append messages to those cases. Agents can read the support queue and update assignment, status, priority, and unread state. Message creation by an agent is only allowed when that agent owns the case.
 
 Agent profiles therefore have to be provisioned through a trusted administrative path such as the Firebase console. A future backend can replace this manual process with custom claims or an admin service.
 

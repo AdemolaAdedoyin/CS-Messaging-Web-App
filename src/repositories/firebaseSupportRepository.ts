@@ -1,14 +1,15 @@
 import {
-  addDoc,
   collection,
   doc,
   getDoc,
+  increment,
   onSnapshot,
   query,
   serverTimestamp,
   setDoc,
   updateDoc,
   where,
+  writeBatch,
   type DocumentData,
   type QueryDocumentSnapshot,
   type Unsubscribe,
@@ -27,6 +28,7 @@ import type {
   RealtimeConversation,
   RealtimeMessage,
   RealtimeProfile,
+  RealtimeRole,
 } from '../types/realtime'
 
 const requireFirebase = () => {
@@ -48,6 +50,8 @@ const conversationFromDoc = (snapshot: QueryDocumentSnapshot<DocumentData>): Rea
     priority: data.priority,
     assignedAgentId: data.assignedAgentId ?? null,
     assignedAgentName: data.assignedAgentName ?? null,
+    agentUnreadCount: data.agentUnreadCount ?? 0,
+    customerUnreadCount: data.customerUnreadCount ?? 0,
     createdAt: asDate(data.createdAt),
     updatedAt: asDate(data.updatedAt),
   }
@@ -148,8 +152,10 @@ export const createRealtimeCase = async (
 ): Promise<string> => {
   const { db } = requireFirebase()
   const conversationRef = doc(collection(db, 'conversations'))
+  const openingMessageRef = doc(collection(conversationRef, 'messages'))
+  const batch = writeBatch(db)
 
-  await setDoc(conversationRef, {
+  batch.set(conversationRef, {
     customerId: profile.uid,
     customerName: input.customerName.trim(),
     customerEmail: input.customerEmail.trim(),
@@ -158,11 +164,13 @@ export const createRealtimeCase = async (
     priority: 'normal',
     assignedAgentId: null,
     assignedAgentName: null,
+    agentUnreadCount: 1,
+    customerUnreadCount: 0,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
 
-  await addDoc(collection(conversationRef, 'messages'), {
+  batch.set(openingMessageRef, {
     authorId: profile.uid,
     authorRole: 'customer',
     authorName: profile.displayName,
@@ -170,6 +178,7 @@ export const createRealtimeCase = async (
     createdAt: serverTimestamp(),
   })
 
+  await batch.commit()
   return conversationRef.id
 }
 
@@ -206,6 +215,16 @@ export const subscribeRealtimeMessages = (
   }, (error) => onError(error))
 }
 
+export const markRealtimeConversationRead = async (
+  conversationId: string,
+  role: RealtimeRole,
+) => {
+  const { db } = requireFirebase()
+  await updateDoc(doc(db, 'conversations', conversationId), role === 'agent'
+    ? { agentUnreadCount: 0 }
+    : { customerUnreadCount: 0 })
+}
+
 export const sendRealtimeMessage = async (
   conversationId: string,
   profile: RealtimeProfile,
@@ -215,7 +234,18 @@ export const sendRealtimeMessage = async (
   const trimmed = body.trim()
   if (!trimmed) return
 
-  await addDoc(collection(db, 'conversations', conversationId, 'messages'), {
+  const conversationRef = doc(db, 'conversations', conversationId)
+  const conversationSnapshot = await getDoc(conversationRef)
+  if (!conversationSnapshot.exists()) throw new Error('This support case no longer exists.')
+
+  if (profile.role === 'agent' && conversationSnapshot.data().assignedAgentId !== profile.uid) {
+    throw new Error('Assign this case to yourself before sending a reply.')
+  }
+
+  const messageRef = doc(collection(conversationRef, 'messages'))
+  const batch = writeBatch(db)
+
+  batch.set(messageRef, {
     authorId: profile.uid,
     authorRole: profile.role,
     authorName: profile.displayName,
@@ -223,9 +253,21 @@ export const sendRealtimeMessage = async (
     createdAt: serverTimestamp(),
   })
 
-  const changes: Record<string, unknown> = { updatedAt: serverTimestamp() }
-  if (profile.role === 'customer') changes.status = 'open'
-  await updateDoc(doc(db, 'conversations', conversationId), changes)
+  if (profile.role === 'customer') {
+    batch.update(conversationRef, {
+      updatedAt: serverTimestamp(),
+      status: 'open',
+      agentUnreadCount: increment(1),
+    })
+  } else {
+    batch.update(conversationRef, {
+      updatedAt: serverTimestamp(),
+      customerUnreadCount: increment(1),
+      agentUnreadCount: 0,
+    })
+  }
+
+  await batch.commit()
 }
 
 export const assignRealtimeConversation = async (

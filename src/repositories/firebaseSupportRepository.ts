@@ -14,8 +14,8 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore'
 import {
+  createUserWithEmailAndPassword,
   onAuthStateChanged,
-  signInAnonymously,
   signInWithEmailAndPassword,
   signOut,
   type User,
@@ -97,12 +97,13 @@ export const observeRealtimeProfile = (
   })
 }
 
-export const signInRealtimeCustomer = async (displayName: string, email: string): Promise<RealtimeProfile> => {
+export const createRealtimeCustomerAccount = async (
+  displayName: string,
+  email: string,
+  password: string,
+): Promise<RealtimeProfile> => {
   const services = requireFirebase()
-  const credential = services.auth.currentUser?.isAnonymous
-    ? { user: services.auth.currentUser }
-    : await signInAnonymously(services.auth)
-
+  const credential = await createUserWithEmailAndPassword(services.auth, email.trim(), password)
   const profile: RealtimeProfile = {
     uid: credential.user.uid,
     displayName: displayName.trim(),
@@ -110,7 +111,18 @@ export const signInRealtimeCustomer = async (displayName: string, email: string)
     role: 'customer',
   }
 
-  await setDoc(doc(services.db, 'profiles', profile.uid), profile, { merge: true })
+  await setDoc(doc(services.db, 'profiles', profile.uid), profile)
+  return profile
+}
+
+export const signInRealtimeCustomer = async (email: string, password: string): Promise<RealtimeProfile> => {
+  const services = requireFirebase()
+  const credential = await signInWithEmailAndPassword(services.auth, email.trim(), password)
+  const profile = await readProfile(credential.user)
+  if (profile.role !== 'customer') {
+    await signOut(services.auth)
+    throw new Error('This account is not a customer account.')
+  }
   return profile
 }
 

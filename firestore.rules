@@ -14,6 +14,10 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/conversations/$(conversationId));
     }
 
+    function conversationAfter(conversationId) {
+      return getAfter(/databases/$(database)/documents/conversations/$(conversationId));
+    }
+
     function isAgent() {
       return signedIn() && profile().data.role == 'agent';
     }
@@ -26,8 +30,12 @@ service cloud.firestore {
       return signedIn() && conversation(conversationId).data.customerId == request.auth.uid;
     }
 
-    function isAssignedAgent(conversationId) {
-      return isAgent() && conversation(conversationId).data.assignedAgentId == request.auth.uid;
+    function ownsConversationAfter(conversationId) {
+      return signedIn() && conversationAfter(conversationId).data.customerId == request.auth.uid;
+    }
+
+    function isAssignedAgentAfter(conversationId) {
+      return isAgent() && conversationAfter(conversationId).data.assignedAgentId == request.auth.uid;
     }
 
     match /profiles/{userId} {
@@ -86,8 +94,8 @@ service cloud.firestore {
 
         allow create: if signedIn() &&
           (
-            (isCustomer() && ownsConversation(conversationId)) ||
-            isAssignedAgent(conversationId)
+            (isCustomer() && ownsConversationAfter(conversationId)) ||
+            isAssignedAgentAfter(conversationId)
           ) &&
           request.resource.data.authorId == request.auth.uid &&
           request.resource.data.authorRole == profile().data.role &&

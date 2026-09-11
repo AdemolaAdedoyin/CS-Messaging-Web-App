@@ -4,6 +4,7 @@ import { isFirebaseConfigured } from '../../firebase/client'
 import {
   assignRealtimeConversation,
   createRealtimeCase,
+  createRealtimeCustomerAccount,
   observeRealtimeProfile,
   sendRealtimeMessage,
   signInRealtimeAgent,
@@ -16,6 +17,8 @@ import {
 import type { RealtimeConversation, RealtimeMessage, RealtimeProfile, RealtimeRole } from '../../types/realtime'
 import type { ConversationStatus, Priority } from '../../types/support'
 
+type CustomerAuthMode = 'signin' | 'signup'
+
 const emit = defineEmits<{ back: [] }>()
 
 const role = ref<RealtimeRole | null>(null)
@@ -27,8 +30,10 @@ const loading = ref(false)
 const error = ref('')
 const notice = ref('')
 
+const customerAuthMode = ref<CustomerAuthMode>('signin')
 const customerName = ref('')
 const customerEmail = ref('')
+const customerPassword = ref('')
 const subject = ref('')
 const openingMessage = ref('')
 const reply = ref('')
@@ -46,15 +51,23 @@ const formatTime = (date: Date) => new Intl.DateTimeFormat('en', { hour: 'numeri
 const formatDate = (date: Date) => new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' }).format(date)
 const initials = (name: string) => name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase()
 
-const clearSubscriptions = () => {
+const clearConversationSubscription = () => {
   unsubscribeConversations?.()
   unsubscribeConversations = null
+}
+
+const clearMessageSubscription = () => {
   unsubscribeMessages?.()
   unsubscribeMessages = null
 }
 
+const clearSubscriptions = () => {
+  clearConversationSubscription()
+  clearMessageSubscription()
+}
+
 const subscribeForProfile = (nextProfile: RealtimeProfile) => {
-  clearSubscriptions()
+  clearConversationSubscription()
   unsubscribeConversations = subscribeRealtimeConversations(nextProfile, (next) => {
     conversations.value = next
     if (!next.some((item) => item.id === selectedId.value)) selectedId.value = next[0]?.id ?? ''
@@ -63,17 +76,20 @@ const subscribeForProfile = (nextProfile: RealtimeProfile) => {
   })
 }
 
-watch(selectedId, (id) => {
-  unsubscribeMessages?.()
-  unsubscribeMessages = null
-  messages.value = []
-  if (!id || !profile.value) return
-  unsubscribeMessages = subscribeRealtimeMessages(id, (next) => {
-    messages.value = next
-  }, (reason) => {
-    error.value = reason.message
-  })
-})
+watch(
+  [selectedId, () => profile.value?.uid],
+  ([id, uid]) => {
+    clearMessageSubscription()
+    messages.value = []
+    if (!id || !uid) return
+    unsubscribeMessages = subscribeRealtimeMessages(id, (next) => {
+      messages.value = next
+    }, (reason) => {
+      error.value = reason.message
+    })
+  },
+  { immediate: true },
+)
 
 onMounted(() => {
   if (!isFirebaseConfigured) return
@@ -100,15 +116,21 @@ const chooseRole = (nextRole: RealtimeRole) => {
 }
 
 const startCustomerSession = async () => {
-  if (!customerName.value.trim() || !customerEmail.value.trim()) return
+  if (!customerEmail.value.trim() || !customerPassword.value) return
+  if (customerAuthMode.value === 'signup' && !customerName.value.trim()) return
+
   loading.value = true
   error.value = ''
   try {
-    const nextProfile = await signInRealtimeCustomer(customerName.value, customerEmail.value)
+    const nextProfile = customerAuthMode.value === 'signup'
+      ? await createRealtimeCustomerAccount(customerName.value, customerEmail.value, customerPassword.value)
+      : await signInRealtimeCustomer(customerEmail.value, customerPassword.value)
+
     profile.value = nextProfile
     subscribeForProfile(nextProfile)
+    customerPassword.value = ''
   } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : 'Unable to start the customer session.'
+    error.value = reason instanceof Error ? reason.message : 'Unable to open the customer account.'
   } finally {
     loading.value = false
   }
@@ -211,7 +233,7 @@ const leaveSession = async () => {
       <h1>Ready for Firebase configuration.</h1>
       <p>The realtime code and security rules are included, while the existing portfolio demo remains available without external services.</p>
       <div class="setup-steps">
-        <span>1</span><p>Create/configure the Firebase project and enable Firestore, Anonymous Auth, and Email/Password Auth.</p>
+        <span>1</span><p>Create/configure the Firebase project and enable Firestore and Email/Password Auth.</p>
         <span>2</span><p>Add the <code>VITE_FIREBASE_*</code> values from <code>.env.example</code> to Vercel.</p>
         <span>3</span><p>Deploy <code>firestore.rules</code> and provision one agent profile.</p>
       </div>
@@ -231,14 +253,18 @@ const leaveSession = async () => {
     </section>
 
     <section v-else-if="role === 'customer' && !profile" class="realtime-auth-card">
-      <p class="realtime-kicker">Customer session</p>
-      <h1>Start a live support session.</h1>
-      <p>No password required. Firebase Anonymous Auth creates a private customer session for this browser.</p>
+      <p class="realtime-kicker">Customer account</p>
+      <h1>{{ customerAuthMode === 'signin' ? 'Welcome back.' : 'Create your support account.' }}</h1>
+      <p>{{ customerAuthMode === 'signin' ? 'Sign in to restore your support cases and continue existing conversations.' : 'Create an account once, then return from any browser using the same email and password.' }}</p>
       <form @submit.prevent="startCustomerSession">
-        <label>Name<input v-model="customerName" autocomplete="name" required placeholder="e.g. Maya Thompson" /></label>
+        <label v-if="customerAuthMode === 'signup'">Name<input v-model="customerName" autocomplete="name" required placeholder="e.g. Maya Thompson" /></label>
         <label>Email<input v-model="customerEmail" type="email" autocomplete="email" required placeholder="maya@example.com" /></label>
+        <label>Password<input v-model="customerPassword" type="password" :autocomplete="customerAuthMode === 'signin' ? 'current-password' : 'new-password'" minlength="6" required /></label>
         <p v-if="error" class="realtime-error">{{ error }}</p>
-        <button class="realtime-primary" :disabled="loading">{{ loading ? 'Starting…' : 'Continue' }}</button>
+        <button class="realtime-primary" :disabled="loading">{{ loading ? 'Please wait…' : customerAuthMode === 'signin' ? 'Sign in' : 'Create customer account' }}</button>
+        <button type="button" class="realtime-secondary" @click="customerAuthMode = customerAuthMode === 'signin' ? 'signup' : 'signin'; error = ''">
+          {{ customerAuthMode === 'signin' ? 'New customer? Create an account' : 'Already have an account? Sign in' }}
+        </button>
       </form>
     </section>
 
@@ -283,6 +309,7 @@ const leaveSession = async () => {
             <div class="live-avatar">{{ initials(message.authorName) }}</div>
             <div><div class="live-message-meta"><strong>{{ message.authorRole === 'customer' ? 'You' : message.authorName }}</strong><time>{{ formatTime(message.createdAt) }}</time></div><p>{{ message.body }}</p></div>
           </article>
+          <p v-if="!messages.length" class="live-empty">Loading conversation messages…</p>
         </div>
         <form class="live-composer" @submit.prevent="send">
           <textarea v-model="reply" maxlength="1200" aria-label="Live customer message" placeholder="Send a message to support…"></textarea>

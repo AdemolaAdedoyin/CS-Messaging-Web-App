@@ -1,6 +1,6 @@
 # SupportDesk
 
-A recruiter-facing customer-support messaging experience rebuilt from the original CS Messaging prototype. SupportDesk now has two complementary modes: a zero-setup portfolio demo and an optional Firebase-backed realtime workspace for genuine multi-browser customer/agent messaging.
+A recruiter-facing customer-support messaging experience rebuilt from the original CS Messaging prototype. SupportDesk has two complementary modes: a zero-setup portfolio demo and a Firebase-backed realtime workspace for genuine multi-browser customer/agent messaging.
 
 **Live demo:** https://cs-messaging-web-app-tan.vercel.app/
 
@@ -20,16 +20,17 @@ The browser-backed demo remains the fastest way to explore the product without c
 
 ### Realtime workspace
 
-SupportDesk v3 adds a Firebase-backed path designed for two separate browsers or devices:
+SupportDesk v3 provides a Firebase-backed path designed for separate browsers or devices:
 
-- Customers authenticate with Firebase Anonymous Auth
-- Customers can create their own support case and send messages
+- Customers create a persistent email/password account or sign back into an existing account
+- Customer case history is tied to the Firebase Auth UID and is restored after sign-out/sign-in
+- Customers can create support cases and send messages
 - Support agents sign in with a pre-provisioned Firebase email/password account
 - Agents subscribe to the shared queue in real time
 - New customer cases appear in the agent inbox without refreshing
 - Agents can claim unassigned cases, update priority/status, and reply
 - Customer and agent message threads update from Firestore snapshots
-- Existing authenticated sessions can be restored by Firebase Auth
+- Existing authenticated sessions are restored by Firebase Auth
 - Firestore security rules prevent customers from reading other customers' cases or promoting themselves to agents
 
 The realtime launcher remains usable when Firebase is not configured: it shows setup instructions and the normal portfolio demo continues working.
@@ -86,31 +87,66 @@ For realtime development, copy `.env.example` to `.env.local` and add the Fireba
 
 1. Create or select a Firebase project and register a Web App.
 2. Enable **Cloud Firestore**.
-3. In Firebase Authentication, enable **Anonymous** and **Email/Password** providers.
+3. In Firebase Authentication, enable **Email/Password**.
 4. Copy `.env.example` to `.env.local` and populate all `VITE_FIREBASE_*` values from the Firebase Web App configuration.
 5. Deploy `firestore.rules` to the project. With the Firebase CLI this can be done with `firebase deploy --only firestore:rules` after selecting the correct project.
-6. In Firebase Authentication, create the support-agent email/password user manually. There is intentionally no public agent signup route.
-7. Copy that agent user's Firebase Auth UID and create a Firestore document at `profiles/{uid}` with:
+6. Provision at least one support-agent account using the process below.
+7. Add the same `VITE_FIREBASE_*` variables to the Vercel project and redeploy.
+8. Open **Realtime workspace → Customer** in one browser and **Realtime workspace → Support agent** in another browser to verify cross-session behavior.
+
+Firebase Web App configuration values identify the Firebase project; authorization is enforced by Firebase Auth and `firestore.rules`. Do not put service-account private keys or Firebase Admin credentials in the frontend or Vercel `VITE_*` variables.
+
+### Adding a support agent
+
+Yes — with the current secure architecture, **every support agent must be provisioned in Firebase before they can sign in**. There is intentionally no public "create agent" flow because letting browser clients grant themselves the `agent` role would be a privilege-escalation risk.
+
+Repeat these steps for each new agent:
+
+1. Go to **Firebase Console → Authentication → Users → Add user**.
+2. Create the agent's email/password account.
+3. Copy the generated Firebase Auth **User UID**.
+4. Go to **Firestore → Data → `profiles`**.
+5. Create a document whose **Document ID is exactly that User UID**.
+6. Add these string fields:
 
 ```json
 {
   "uid": "THE_AGENT_FIREBASE_UID",
-  "displayName": "Ademola",
-  "email": "the-agent-email@example.com",
+  "displayName": "Agent Name",
+  "email": "agent@example.com",
   "role": "agent"
 }
 ```
 
-8. Add the same `VITE_FIREBASE_*` variables to the Vercel project and redeploy.
-9. Open **Realtime workspace → Customer** in one browser and **Realtime workspace → Support agent** in another browser to verify cross-session behavior.
+The document ID and `uid` field must match the Firebase Authentication UID exactly. The email should also match the Auth account email.
 
-Firebase Web App configuration values identify the Firebase project; authorization is enforced by Firebase Auth and `firestore.rules`. Do not put service-account private keys or Firebase Admin credentials in the frontend or Vercel `VITE_*` variables.
+For example:
+
+```text
+Authentication user UID: abc123
+
+profiles/abc123
+  uid: abc123
+  displayName: Ademola
+  email: agent@example.com
+  role: agent
+```
+
+For a small portfolio deployment, manual provisioning is deliberate and keeps agent creation outside the untrusted browser client. A larger production system should replace this with an administrative backend using Firebase Admin/custom claims or an invitation workflow.
+
+### Customer accounts
+
+Realtime customers create their own email/password account from the app. Their `profiles/{uid}` document is created automatically with `role: "customer"`.
+
+Cases are stored against that immutable Firebase Auth UID. Because of that, signing out and later signing back in with the same customer email/password restores the same case history. A name/email combination by itself is not treated as authentication.
+
+Earlier v3 builds used Anonymous Auth for customer sessions. Anonymous identities cannot be recovered after an explicit sign-out because Firebase creates a different UID the next time. The current version uses persistent customer accounts instead. If Anonymous Auth was enabled while setting up an older build, it can now be disabled unless you intentionally add a guest-customer mode later.
 
 ## Firestore security model
 
 Customer profiles can only be created as `customer`; client code cannot self-provision an `agent` profile. Customers can read their own conversations and messages, create their own cases, and append messages to those cases. Agents can read the support queue and update assignment, status, priority, and messages.
 
-The agent profile must therefore be provisioned through an administrative path such as the Firebase console. A future backend could replace this manual provisioning with custom claims or an admin service.
+Agent profiles therefore have to be provisioned through a trusted administrative path such as the Firebase console. A future backend can replace this manual process with custom claims or an admin service.
 
 ## Quality checks
 
@@ -142,6 +178,7 @@ This provides a one-click recruiter experience while still demonstrating the arc
 
 ### Support tooling
 
+- Admin-only agent invitation/provisioning workflow backed by Firebase Admin or another trusted server
 - SLA timers, escalation policies, and breach indicators
 - Internal agent notes that are never visible to customers
 - Canned replies/macros and saved response templates

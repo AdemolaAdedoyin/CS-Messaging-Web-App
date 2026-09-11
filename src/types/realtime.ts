@@ -19,6 +19,8 @@ export interface RealtimeConversation {
   priority: Priority
   assignedAgentId: string | null
   assignedAgentName: string | null
+  agentUnreadCount: number
+  customerUnreadCount: number
   createdAt: Date
   updatedAt: Date
 }

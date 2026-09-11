@@ -10,6 +10,14 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/profiles/$(request.auth.uid));
     }
 
+    function conversation(conversationId) {
+      return get(/databases/$(database)/documents/conversations/$(conversationId));
+    }
+
+    function conversationAfter(conversationId) {
+      return getAfter(/databases/$(database)/documents/conversations/$(conversationId));
+    }
+
     function isAgent() {
       return signedIn() && profile().data.role == 'agent';
     }
@@ -19,8 +27,15 @@ service cloud.firestore {
     }
 
     function ownsConversation(conversationId) {
-      return signedIn() &&
-        get(/databases/$(database)/documents/conversations/$(conversationId)).data.customerId == request.auth.uid;
+      return signedIn() && conversation(conversationId).data.customerId == request.auth.uid;
+    }
+
+    function ownsConversationAfter(conversationId) {
+      return signedIn() && conversationAfter(conversationId).data.customerId == request.auth.uid;
+    }
+
+    function isAssignedAgentAfter(conversationId) {
+      return isAgent() && conversationAfter(conversationId).data.assignedAgentId == request.auth.uid;
     }
 
     match /profiles/{userId} {
@@ -51,15 +66,25 @@ service cloud.firestore {
         request.resource.data.priority == 'normal' &&
         request.resource.data.assignedAgentId == null &&
         request.resource.data.assignedAgentName == null &&
+        request.resource.data.agentUnreadCount == 1 &&
+        request.resource.data.customerUnreadCount == 0 &&
         request.resource.data.createdAt == request.time &&
         request.resource.data.updatedAt == request.time;
 
       allow update: if isAgent() || (
         isCustomer() &&
-        resource.data.customerId == request.auth.uid &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt', 'status']) &&
-        request.resource.data.status == 'open' &&
-        request.resource.data.updatedAt == request.time
+        resource.data.customerId == request.auth.uid && (
+          (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt', 'status', 'agentUnreadCount']) &&
+            request.resource.data.status == 'open' &&
+            request.resource.data.updatedAt == request.time &&
+            request.resource.data.agentUnreadCount == resource.data.get('agentUnreadCount', 0) + 1
+          ) ||
+          (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['customerUnreadCount']) &&
+            request.resource.data.customerUnreadCount == 0
+          )
+        )
       );
 
       allow delete: if false;
@@ -68,7 +93,10 @@ service cloud.firestore {
         allow read: if isAgent() || ownsConversation(conversationId);
 
         allow create: if signedIn() &&
-          (isAgent() || ownsConversation(conversationId)) &&
+          (
+            (isCustomer() && ownsConversationAfter(conversationId)) ||
+            isAssignedAgentAfter(conversationId)
+          ) &&
           request.resource.data.authorId == request.auth.uid &&
           request.resource.data.authorRole == profile().data.role &&
           request.resource.data.body is string &&
